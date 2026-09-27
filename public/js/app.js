@@ -533,8 +533,27 @@ function mySessionIds(ev, exceptId = null) {
  */
 const PASS_SPORT = 'volleyball';
 
+/*
+ * Two different things wear the same badge, and telling them apart is what
+ * this is for.
+ *
+ * '4h' and '2h' are the pass a member BUYS. It is a volleyball pass, so it
+ * holds and covers volleyball and nothing else.
+ *
+ * 'exec' is the committee. Execs run the night and do not pay for any of it
+ * — basketball, football, volleyball, both slots, all of it. Before this
+ * they were given a '4h' pass because it was the only free-play there was,
+ * which is why an exec's basketball seat looked exactly like a member's
+ * pass reserving a sport it would not pay for.
+ */
+const EXEC_PASS = 'exec';
+function isExecPass(pass) { return pass === EXEC_PASS; }
+
 function passLists(player) {
   if (!Array.isArray(player?.passLists)) return [];
+  // An exec plays free in whatever they actually play, so their standing
+  // spot may be any sport. A bought pass is a volleyball pass.
+  if (isExecPass(player.battlePass)) return player.passLists.filter(Boolean);
   return player.passLists.filter(w => w && w.sport === PASS_SPORT);
 }
 
@@ -720,6 +739,19 @@ function computePrice(event, listIds, method, pass = null) {
   const bySport = {};
   let total = 0;
   const parts = [];
+  // An exec is free everywhere, so there is no sport to sort into and no
+  // bundle to apply — the bill is zero before any of that starts.
+  if (isExecPass(pass)) {
+    for (const id of listIds) {
+      const l = listById(event, id);
+      if (!l) continue;
+      parts.push({
+        label: `${SPORTS[l.sport]?.label || l.sport} — ${l.label} · ${t('execFree')}`,
+        price: 0,
+      });
+    }
+    return { total: 0, parts };
+  }
   for (const id of listIds) {
     const l = listById(event, id);
     if (!l) continue;
@@ -769,6 +801,8 @@ function coveredSignupIds(ev) {
   for (const sus of Object.values(byPerson)) {
     const pass = playerPass(sus[0], ev.date);
     if (!pass) continue;
+    // Every spot, whatever the sport — the committee does not pay.
+    if (isExecPass(pass)) { sus.forEach(s => set.add(s.id)); continue; }
     const volley = sus
       .filter(s => listById(ev, s.listId)?.sport === 'volleyball')
       .sort((a, b) => (listById(ev, a.listId)?.sessionId || '').localeCompare(listById(ev, b.listId)?.sessionId || ''));
@@ -1992,6 +2026,10 @@ function levelChipHtml(who) {
 }
 
 function passChipHtml(type, short = false) {
+  // An exec is not carrying a battle pass, they are the committee. Saying
+  // "Battle Pass EXEC" on the roster invites the question of what an exec
+  // paid for it, which is the opposite of the point.
+  if (isExecPass(type)) return `<span class="chip chip-pass">${esc(t('execPassBtn'))}</span>`;
   const label = short ? 'PASS' : t('battlePass');
   return `<span class="chip chip-pass">${esc(label)}${type ? ' ' + esc(String(type).toUpperCase()) : ''}</span>`;
 }
@@ -3397,24 +3435,15 @@ function openPassModal(player, onDone) {
         <button class="btn btn-small grow" data-type="">${esc(t('noPass'))}</button>
         <button class="btn btn-small grow" data-type="2h">2H · ${fmtMoney(state.settings.passPrice2h)}</button>
         <button class="btn btn-small grow" data-type="4h">4H · ${fmtMoney(state.settings.passPrice4h)}</button>
+        <button class="btn btn-small grow" data-type="exec">${esc(t('execPassBtn'))}</button>
       </div>
+      <p class="hint">${esc(t('execPassHint'))}</p>
       <div id="pm-seats">
         <label class="field-label">${esc(t('passUntilLbl'))}</label>
         <input class="input" id="pm-until" type="date" value="${esc(rec.passUntil || state.settings.seasonEnd || '')}">
         <p class="hint">${esc(t('passUntilHint'))}</p>
         <label class="field-label">${esc(t('heldSpotLbl'))}</label>
-        <div class="pass-lists">
-          ${(ev?.sessions || []).filter(sess =>
-            (ev.lists || []).some(l => l.sessionId === sess.id && l.sport === PASS_SPORT)).map(sess => `
-            <div class="pass-sess">
-              <small class="hint">${esc(sess.label)}</small>
-              ${(ev.lists || []).filter(l => l.sessionId === sess.id && l.sport === PASS_SPORT).map(l => `
-                <label class="pass-opt">
-                  <input type="checkbox" data-list="${esc(l.id)}" ${has(l) ? 'checked' : ''}>
-                  <span>${esc(SPORTS[l.sport]?.emoji || '')} ${esc(SPORTS[l.sport]?.label || l.sport)} — ${esc(l.label)}</span>
-                </label>`).join('')}
-            </div>`).join('')}
-        </div>
+        <div class="pass-lists" id="pm-lists"></div>
         <p class="hint">${esc(t('heldSpotNote'))}</p>
       </div>
       <div class="row gap">
@@ -3423,10 +3452,45 @@ function openPassModal(player, onDone) {
       </div>
     </div>`, { wide: true });
 
+  /*
+   * Which spots may be held depends on why the person is free: a bought
+   * pass is volleyball, an exec plays anything. So the list is drawn from
+   * the chosen type rather than fixed when the modal opens, and redrawn
+   * whenever that changes — otherwise picking "Exec" would still offer only
+   * volleyball, which is the hole an exec fell down in the first place.
+   *
+   * Ticks already made are carried across, so switching type by accident
+   * does not silently clear somebody's held spots.
+   */
+  function paintLists() {
+    const box = $('#pm-lists', ov);
+    if (!box) return;
+    $$('[data-list]', ov).forEach(cb => {
+      const l = (ev?.lists || []).find(x => x.id === cb.dataset.list);
+      if (!l) return;
+      const at = chosen.findIndex(c => c.sport === l.sport && c.sessionId === l.sessionId && c.label === l.label);
+      if (cb.checked && at < 0) chosen.push({ sport: l.sport, sessionId: l.sessionId, label: l.label });
+      if (!cb.checked && at >= 0) chosen.splice(at, 1);
+    });
+    const offered = (l) => isExecPass(type) || l.sport === PASS_SPORT;
+    box.innerHTML = (ev?.sessions || [])
+      .filter(sess => (ev.lists || []).some(l => l.sessionId === sess.id && offered(l)))
+      .map(sess => `
+        <div class="pass-sess">
+          <small class="hint">${esc(sess.label)}</small>
+          ${(ev.lists || []).filter(l => l.sessionId === sess.id && offered(l)).map(l => `
+            <label class="pass-opt">
+              <input type="checkbox" data-list="${esc(l.id)}" ${has(l) ? 'checked' : ''}>
+              <span>${esc(SPORTS[l.sport]?.emoji || '')} ${esc(SPORTS[l.sport]?.label || l.sport)} — ${esc(l.label)}</span>
+            </label>`).join('')}
+        </div>`).join('');
+  }
+
   function paint() {
     $$('#pm-type [data-type]', ov).forEach(b =>
       b.className = 'btn btn-small grow ' + ((b.dataset.type || null) === type ? 'btn-exec' : 'btn-ghost'));
     $('#pm-seats', ov).hidden = !type;
+    paintLists();
     $$('#pm-level [data-level]', ov).forEach(b =>
       b.className = 'btn btn-small grow ' + ((Number(b.dataset.level) || null) === level ? 'btn-exec' : 'btn-ghost'));
   }
@@ -3446,7 +3510,9 @@ function openPassModal(player, onDone) {
       for (const cb of $$('[data-list]', ov)) {
         if (!cb.checked) continue;
         const l = (ev.lists || []).find(x => x.id === cb.dataset.list);
-        if (l && l.sport === PASS_SPORT) lists.push({ sport: l.sport, sessionId: l.sessionId, label: l.label });
+        if (l && (isExecPass(type) || l.sport === PASS_SPORT)) {
+          lists.push({ sport: l.sport, sessionId: l.sessionId, label: l.label });
+        }
       }
     }
     await setBattlePass(player, type, lists, $('#pm-until', ov)?.value || '');
