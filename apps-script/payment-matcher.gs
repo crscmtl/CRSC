@@ -402,6 +402,9 @@ function settleTransfers() {
 
     var night = hits[0].night, people = hits[0].people, exact = hits[0].exact;
     var names = people.map(function (p) { return p.name; });
+    // What each of them owes once this transfer is applied, keyed by sign-up
+    // id rather than by name because two members share a name often enough.
+    var settled = {};
     people.forEach(function (p) {
       if (exact) {
         p.ids.forEach(function (id) {
@@ -409,6 +412,7 @@ function settleTransfers() {
             { paid: bool(true), paidAt: int(Date.now()), paidVia: str('auto-gmail'), paidEmailSentAt: int(Date.now()) },
             ['paid', 'paidAt', 'paidVia', 'paidEmailSentAt']);
         });
+        if (p.ids.length) settled[p.ids[0]] = 0;
       } else if (p.ids.length) {
         // The whole amount on one row; the app sums what a person paid
         // across their spots, so it does not matter which.
@@ -422,15 +426,60 @@ function settleTransfers() {
         var mask = ['amountPaid', 'paidAt', 'paidVia'];
         if (covers) { fields.paidEmailSentAt = int(Date.now()); mask.push('paidEmailSentAt'); }
         patch('events/' + night.eventId + '/signups/' + p.ids[0], fields, mask);
+        settled[p.ids[0]] = covers ? 0 : (cents(p.owed) - amount) / 100;
         if (covers) receipt(p, pay, night, names);
       }
       if (exact) receipt(p, pay, night, names);
     });
+    trimDues(night, settled);
     patch('payments/' + pay.name.split('/').pop(),
       { matched: bool(true), matchedTo: str(names.join(', ')), matchedEvent: str(night.eventId),
         auto: bool(true), matchedAt: int(Date.now()), kind: str(exact ? 'full' : 'partial') },
       ['matched', 'matchedTo', 'matchedEvent', 'auto', 'matchedAt', 'kind']);
   });
+}
+
+/*
+ * Take the people this transfer just paid for off the "who owes" list.
+ *
+ * The app owns `dues` and republishes it on every change — but only from a
+ * browser that has the page open. Nobody has one open at three in the
+ * morning, which is exactly when a transfer gets filed. Without this the
+ * list still says these people owe, and the next reminder chases them for
+ * money they have already sent. Being told you owe $8 you paid on Tuesday
+ * is the kind of thing that sends somebody back to asking an exec.
+ *
+ * Whatever the app publishes next overwrites this, so it only has to hold
+ * until somebody opens the page. The local copy is trimmed too, so a second
+ * transfer in the same run cannot settle the same person twice.
+ */
+function trimDues(night, settled) {
+  var kept = [], changed = false;
+  (night.people || []).forEach(function (p) {
+    var key = (p.ids || [])[0];
+    var owed = (key && settled.hasOwnProperty(key)) ? settled[key] : Number(p.owed);
+    // A part payment leaves them owing less, not nothing — the reminder has
+    // to quote the new figure, so this counts as a change even though the
+    // person stays on the list.
+    if (owed !== Number(p.owed)) changed = true;
+    if (!(owed > 0)) return;
+    kept.push({ name: p.name, owed: owed, ids: p.ids || [], email: p.email || '', lang: p.lang || 'en' });
+  });
+  if (!changed) return;
+  night.people = kept;
+  patch('dues/' + night.eventId, { people: duesPeople(kept) }, ['people']);
+}
+
+function duesPeople(list) {
+  return { arrayValue: { values: list.map(function (p) {
+    return { mapValue: { fields: {
+      name: str(p.name),
+      owed: dbl(p.owed),
+      ids: strList(p.ids || []),
+      email: str(p.email || ''),
+      lang: str(p.lang || 'en'),
+    } } };
+  }) } };
 }
 
 /* Accents off, punctuation out — ANAIS COTE and Anaïs Côté are one name. */
