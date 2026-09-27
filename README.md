@@ -82,7 +82,7 @@ Everything updates **live** — all execs and players see the same lists in real
      then publishes `public/` on every push, so later changes go live on their own,
      about a minute after they are pushed.
    - The club's app is then at
-     `https://juansimonbega-netizen.github.io/CRSC/` — put that link in the
+     `https://crscmtl.github.io/CRSC/` — put that link in the
      linktr.ee and Instagram bio.
 
    (The Firebase CLI — `npm install -g firebase-tools`, `firebase deploy` — is an
