@@ -52,6 +52,11 @@ export const DEFAULT_SETTINGS = {
   lateFeeNote: '+5$ late fee if payment is made after the event',
   lateFeeAmount: 5,
   cancelLockHours: 24,
+  // How many names may wait behind a full list. An unbounded waitlist is a
+  // promise the club cannot keep: thirty people queued for two spare places
+  // have all been told "maybe", and the ones at the bottom turn up for
+  // nothing. 0 means a full list takes no more names at all.
+  waitlistMax: 5,
   // Registration opens this many days before the event: 6 = the Sunday
   // before a Saturday game, so exactly one Saturday is open at a time.
   signupOpenDaysBefore: 6,

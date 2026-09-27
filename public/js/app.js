@@ -279,6 +279,30 @@ function splitByCap(entries, cap) {
 }
 
 /*
+ * How many names may wait behind a full list.
+ *
+ * An unbounded waitlist is a promise the club cannot keep. Thirty people
+ * queued for a gym with two spare places have all been told "maybe", and the
+ * ones at the bottom either turn up for nothing or stop trusting the list.
+ * Five is roughly what actually clears on a Saturday.
+ *
+ * A deliberate 0 means a full list takes no more names at all, so the
+ * fallback has to be about the setting being missing, never about it being
+ * zero — the same trap cancelLockHours fell into.
+ */
+function waitlistMax() {
+  const n = parseFloat(state.settings.waitlistMax);
+  return isFinite(n) && n >= 0 ? n : 5;
+}
+
+/* Full, AND the queue behind it is full: nobody else may put their name on. */
+function listClosed(ev, list) {
+  if (!list) return false;
+  const { confirmed, waitlist } = splitByCap(listEntries(ev.id, list.id), list.cap || 0);
+  return confirmed.length >= (list.cap || 0) && waitlist.length >= waitlistMax();
+}
+
+/*
  * Who a sign-up belongs to.
  *
  * Email first, device second. A device id changes when somebody clears
@@ -2379,12 +2403,14 @@ function openFriendSheet(ev) {
         ${lists.map(l => {
           const { confirmed } = splitByCap(listEntries(ev.id, l.id), l.cap || 0);
           const full = confirmed.length >= (l.cap || 0);
+          const closed = listClosed(ev, l);
           const sport = SPORTS[l.sport] || SPORTS.other;
           return `
-            <label class="join-list ${full ? 'join-full' : ''}">
-              <input type="checkbox" data-flist="${esc(l.id)}" data-fsess="${esc(sess.id)}">
+            <label class="join-list ${full ? 'join-full' : ''} ${closed ? 'join-barred' : ''}">
+              <input type="checkbox" data-flist="${esc(l.id)}" data-fsess="${esc(sess.id)}" ${closed ? 'disabled' : ''}>
               <span class="grow">${esc(sport.label)} — ${esc(l.label)}</span>
-              ${full ? `<span class="chip chip-wl">${esc(t('waitlist').toLowerCase())}</span>` : ''}
+              ${closed ? `<span class="chip chip-muted">${esc(t('wlFull'))}</span>`
+                : full ? `<span class="chip chip-wl">${esc(t('waitlist').toLowerCase())}</span>` : ''}
             </label>`;
         }).join('')}
       </div>`;
@@ -2431,6 +2457,9 @@ function openFriendSheet(ev) {
     const chosen = $$('input[data-flist]:checked', ov).map(c => c.dataset.flist);
     if (!chosen.length) { toast(t('pickOne'), 'err'); return; }
     if (chosen.some(id => !canSelfJoin(listById(ev, id)))) { toast(t('levelBlocked'), 'err'); return; }
+    // The page may have been open while the last places went.
+    const shut = chosen.map(id => listById(ev, id)).find(l => listClosed(ev, l));
+    if (shut) { toast(t('wlFullToast', { list: shut.label }), 'err'); render(); return; }
 
     // One profile per email, friends included: if this address is already a
     // member, adding them here would fork their record.
@@ -2480,11 +2509,13 @@ function openSwitchSheet(ev, su) {
         ${lists.map(l => {
           const { confirmed } = splitByCap(listEntries(ev.id, l.id), l.cap || 0);
           const full = confirmed.length >= (l.cap || 0);
+          const closed = listClosed(ev, l);
           const sport = SPORTS[l.sport] || SPORTS.other;
           return `
-            <button class="join-list switch-opt" data-to="${esc(l.id)}">
+            <button class="join-list switch-opt ${closed ? 'join-barred' : ''}" data-to="${esc(l.id)}" ${closed ? 'disabled' : ''}>
               <span class="grow">${esc(sport.label)} — ${esc(l.label)}</span>
-              ${full ? `<span class="chip chip-wl">${esc(t('waitlist').toLowerCase())}</span>`
+              ${closed ? `<span class="chip chip-muted">${esc(t('wlFull'))}</span>`
+                : full ? `<span class="chip chip-wl">${esc(t('waitlist').toLowerCase())}</span>`
                      : `<span class="chip chip-muted">${esc(t('spotsLeft', { n: (l.cap || 0) - confirmed.length }))}</span>`}
             </button>`;
         }).join('')}
@@ -2536,17 +2567,20 @@ function openJoinSheet(ev, preselectedListId) {
         ${lists.map(l => {
           const entries = listEntries(ev.id, l.id);
           const full = entries.length >= (l.cap || 0);
+          const closed = listClosed(ev, l);
           const sport = SPORTS[l.sport] || SPORTS.other;
           // Levels above the player's grade stay visible but locked. Hiding
           // them would just prompt "where did Advanced + go?" — this says
-          // the spot exists and who to ask for it.
-          const barred = !canSelfJoin(l) || taken;
+          // the spot exists and who to ask for it. A list whose waitlist is
+          // full reads the same way: still there, just not takeable.
+          const barred = !canSelfJoin(l) || taken || closed;
           return `
             <label class="join-list ${full ? 'join-full' : ''} ${barred ? 'join-barred' : ''}" data-session="${esc(sess.id)}">
               <input type="checkbox" data-list="${esc(l.id)}" data-sess="${esc(sess.id)}" ${barred ? 'disabled' : ''} ${l.id === preselectedListId && !barred ? 'checked' : ''}>
               <span class="grow">${esc(sport.label)} — ${esc(l.label)}</span>
               ${taken ? `<span class="chip chip-muted">${esc(t('slotTaken'))}</span>`
                 : !canSelfJoin(l) ? `<button type="button" class="btn btn-tiny btn-ghost" data-ask="${esc(l.id)}">${esc(t('askExec'))}</button>`
+                : closed ? `<span class="chip chip-muted">${esc(t('wlFull'))}</span>`
                 : full ? `<span class="chip chip-wl">${esc(t('waitlist').toLowerCase())}</span>` : ''}
             </label>`;
         }).join('')}
@@ -2645,6 +2679,9 @@ function openJoinSheet(ev, preselectedListId) {
     if (!chosen.length) { toast(t('pickOne'), 'err'); return; }
     // The checkbox is disabled, but never trust the form alone.
     if (chosen.some(id => !canSelfJoin(listById(ev, id)))) { toast(t('levelBlocked'), 'err'); return; }
+    // The page may have been open while the last places went.
+    const shut = chosen.map(id => listById(ev, id)).find(l => listClosed(ev, l));
+    if (shut) { toast(t('wlFullToast', { list: shut.label }), 'err'); render(); return; }
     const slots = chosen.map(id => listById(ev, id)?.sessionId);
     if (slots.some((x, i) => slots.indexOf(x) !== i)) { toast(t('onePerSlot'), 'err'); return; }
     // Re-check against the list as it is right now, not as it was when this
@@ -2972,6 +3009,8 @@ function openExecAddModal(ev, listId) {
         <input class="input" id="ea-email" type="email" placeholder="${esc(t('emailPh').replace(' *', ''))}" maxlength="80">
         <input class="input" id="ea-insta" placeholder="${esc(t('instaPh'))}" maxlength="40">
         <label class="pay-opt"><input type="checkbox" id="ea-paid"> <span>${esc(t('alreadyPaid'))}</span></label>
+        <label class="field-label">${esc(t('execAddAmountLbl'))}</label>
+        <input class="input input-num" id="ea-amount" type="number" min="0" step="0.01" inputmode="decimal">
       </div>
       <div class="row gap">
         <button class="btn btn-ghost grow" data-close>${esc(t('cancel'))}</button>
@@ -2982,9 +3021,16 @@ function openExecAddModal(ev, listId) {
     const name = $('#ea-name', ov).value.trim();
     if (!name) { toast(t('nameReq'), 'err'); return; }
     const email = $('#ea-email', ov).value.trim();
+    const raw = $('#ea-amount', ov).value.trim();
+    const amount = raw === '' ? null : Math.max(0, round2(raw));
+    if (amount !== null && !isFinite(amount)) { toast(t('badAmount'), 'err'); return; }
     const who = identityOf({ email, deviceId: 'exec-added', name });
     if (identitiesInSession(ev, l?.sessionId).has(who)
         && !await confirmModal(t('execDupWarn', { name }), t('addAnyway'))) return;
+    // A walk-in standing at the door is a decision an exec has already made,
+    // so the waitlist limit asks rather than refuses.
+    if (listClosed(ev, l)
+        && !await confirmModal(t('execAddClosedWarn', { list: l?.label || '', name }), t('addAnyway'))) return;
     await store.addSignups(ev.id, [{
       id: uid('su'),
       listId,
@@ -2995,13 +3041,23 @@ function openExecAddModal(ev, listId) {
       photo: '',
       deviceId: 'exec-added',
       method: 'cash',
+      // The two are not the same thing and the club needs both: "paid" means
+      // settled in full, while an amount is what actually changed hands.
+      // Somebody who walks in and gives $20 for themselves and a friend has
+      // not paid their own spot twice — the amount says what is really owed.
       paid: $('#ea-paid', ov).checked,
+      ...(amount === null ? {} : { amountPaid: amount, paidAt: Date.now(), paidVia: 'cash' }),
       checkedIn: false,
       team: null,
       order: Date.now(),
       createdAt: Date.now(),
       addedByExec: true,
     }]);
+    if (amount !== null) {
+      logAction('amount', t('logAmount', {
+        name, amount: fmtMoney(amount), date: fmtDateShort(ev.date),
+      }));
+    }
     ov.remove();
     toast(t('added', { name }));
   });
@@ -4391,6 +4447,9 @@ function openSettingsModal() {
         <p class="hint">${esc(t('testAmountHint'))}</p>
         <label class="field-label">${esc(t('signupOpenLbl'))}</label>
         <input class="input input-num" id="cs-openahead" type="number" min="0" step="1" value="${esc(s.signupOpenDaysBefore ?? 6)}">
+        <label class="field-label">${esc(t('waitlistMaxLbl'))}</label>
+        <input class="input input-num" id="cs-wlmax" type="number" min="0" step="1" value="${esc(s.waitlistMax ?? 5)}">
+        <p class="hint">${esc(t('waitlistMaxHint'))}</p>
         <label class="field-label">${esc(t('battlePassNoteLbl'))}</label>
         <textarea class="input" id="cs-bpnote" rows="3">${esc(s.battlePassNote || '')}</textarea>
         <label class="field-label">${esc(t('policiesLbl'))}</label>
@@ -4418,6 +4477,12 @@ function openSettingsModal() {
       seasonEnd: $('#cs-season', ov).value || s.seasonEnd || '',
       lateFeeNote: $('#cs-latefee', ov).value.trim(),
       lateFeeAmount: parseFloat($('#cs-latefeeamt', ov).value) || 0,
+      // A deliberate 0 is "a full list takes no more names", so it must
+      // survive the save rather than falling back to the default.
+      waitlistMax: (() => {
+        const n = parseFloat($('#cs-wlmax', ov).value);
+        return isFinite(n) && n >= 0 ? n : 5;
+      })(),
       // The Gmail matcher reads these from here too, so a price only ever
       // exists in one place.
       passPrice4h: parseFloat($('#cs-pass4', ov).value) || 0,

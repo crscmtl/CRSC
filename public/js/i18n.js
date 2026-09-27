@@ -507,6 +507,13 @@ const STRINGS = {
   bringCash: ['You chose cash — pay an exec at the gym before you play.', 'Vous avez choisi comptant — payez un exec au gymnase avant de jouer.'],
   yourTotal: ['Your total for {date}', 'Votre total pour {date}'],
   waitlistNote: ['Full lists put you on the waitlist — if a spot opens you\'re moved up automatically and emailed.', 'Liste complète = liste d\'attente — si une place se libère, vous montez automatiquement et recevez un courriel.'],
+  wlFull: ['waitlist full', 'liste d\'attente pleine'],
+  wlFullNote: ['A list whose waitlist is full takes no more names — try another level or another time slot.', 'Une liste dont la liste d\'attente est pleine n\'accepte plus de noms — essayez un autre niveau ou un autre créneau.'],
+  wlFullToast: ['{list} is full and so is its waitlist.', '{list} est complète, et sa liste d\'attente aussi.'],
+  waitlistMaxLbl: ['Waitlist limit (names behind a full list)', 'Limite de liste d\'attente (noms derrière une liste pleine)'],
+  waitlistMaxHint: ['0 means a full list takes no more names at all.', '0 = une liste pleine n\'accepte plus aucun nom.'],
+  execAddAmountLbl: ['Paid how much? (leave blank if unpaid)', 'Payé combien? (laisser vide si non payé)'],
+  execAddClosedWarn: ['{list} is full and its waitlist is full. Add {name} anyway?', '{list} est complète et sa liste d\'attente aussi. Ajouter {name} quand même?'],
 
   /* emails (rendered in the recipient's language) */
   emailConfSubject: ['CRSC — You\'re signed up for {date}', 'CRSC — Inscription confirmée : {date}'],
