@@ -695,13 +695,10 @@ async function seatPassHolders(ev) {
       // seatSignups skips ids that already exist, so a seat an exec has
       // since marked paid is never rewritten back to unpaid.
       const fresh = await store.seatSignups(ev.id, adds);
-      if (fresh.length) {
-        toast(t('passSeated', { n: fresh.length }));
-        // Tell the holders their spot is waiting, while there is still time
-        // for them to say they cannot make it.
-        notifySeatHeld(ev, fresh).catch(err => console.error('seat email', err));
-      }
+      if (fresh.length) toast(t('passSeated', { n: fresh.length }));
     }
+    // Deliberately not tied to the seat being created: see notifyHeldSeats.
+    notifyHeldSeats(ev).catch(err => console.error('seat email', err));
   } catch (err) {
     console.error('seat pass holders', err);
     seatedEvents.delete(ev.id);      // let a later render try again
@@ -1046,6 +1043,32 @@ async function offerCancelNotice(ev) {
     } catch (err) { console.error('cancel email', err); }
   }
   toast(t('cancelSent', { n: sent }));
+}
+
+/*
+ * "Your spot is held for Saturday" — sent when that Saturday opens, not
+ * when the seat is created.
+ *
+ * Seats are put down for every remaining Saturday of the season in one go,
+ * so sending on creation meant a pass holder got one email per Saturday in
+ * a single burst. Seven at 10:22 in the morning reads as the app breaking,
+ * not as good news, and it buries the one that actually matters.
+ *
+ * Sign-ups open six days before a game, so an event becomes open on the
+ * Sunday before it. Waiting for that gives a pass holder exactly one email
+ * a week, when there is something to act on — the week they are about to
+ * play, while there is still time to say they cannot make it.
+ *
+ * Claimed on the row before sending, so two execs with the page open cannot
+ * both send it, and a later visit cannot send it again.
+ */
+async function notifyHeldSeats(ev) {
+  if (store.mode === 'demo' || !mailerConfigured()) return;
+  if (!isEventOpen(ev)) return;           // still "opens later" — nothing to say yet
+  const due = eventSignups(ev.id).filter(su => su.viaPass && su.email && !su.heldEmailAt);
+  if (!due.length) return;
+  await Promise.all(due.map(su => store.updateSignup(ev.id, su.id, { heldEmailAt: Date.now() })));
+  await notifySeatHeld(ev, due);
 }
 
 async function notifySeatHeld(ev, seats) {
