@@ -1,10 +1,14 @@
 /*
  * Moving a held spot has to move it, not copy it.
  *
- * Essma's season pass was changed from holding a football spot to holding a
- * basketball one, and the football seat stayed where it was — so she was on
- * two lists at 5:30, which is the exact thing the rest of the app exists to
+ * Essma's season pass was changed from holding one volleyball level to
+ * holding another, and the old seat stayed where it was — so she was on two
+ * lists at 5:30, which is the exact thing the rest of the app exists to
  * prevent. Nobody did anything wrong; the seating only ever added.
+ *
+ * (Both lists are volleyball because that is all a season pass may hold —
+ * see pass-sport-check. This used to move a seat from football to
+ * basketball, which the pass was never entitled to reserve.)
  *
  * A seat an exec has already marked paid, or that somebody has checked in
  * on, is a fact about that night rather than a standing reservation, so it
@@ -25,22 +29,22 @@ const seat = (id, listId, email, extra = {}) => ({
 const fixture = {
   settings: { passAutoSeat: true }, removals: [], payments: [], log: [],
   players: {
-    // Her pass now holds basketball. The football seat below is the one it
+    // Her pass now holds Advanced +. The Advanced seat below is the one it
     // used to hold, and has to go.
     dE: { deviceId: 'dE', name: 'Essma', email: 'essma@x.com', battlePass: '4h',
-          passLists: [{ sport: 'basketball', sessionId: 's1', label: 'Mixed' }] },
+          passLists: [{ sport: 'volleyball', sessionId: 's1', label: 'Advanced +' }] },
     // Somebody else's paid seat on a list their pass no longer holds: a fact
     // about the night, left alone.
     dP: { deviceId: 'dP', name: 'Paid Pat', email: 'pat@x.com', battlePass: '4h',
-          passLists: [{ sport: 'basketball', sessionId: 's1', label: 'Mixed' }] },
+          passLists: [{ sport: 'volleyball', sessionId: 's1', label: 'Advanced +' }] },
   },
   events: [{ id: 'ev', title: 'S', date: DATE, status: 'open', location: 'X',
     sessions: [{ id: 's1', label: '5:30 - 7:30 PM' }],
-    lists: [L('f1', 'football', '5v5'), L('b1', 'basketball', 'Mixed')],
+    lists: [L('v0', 'volleyball', 'Advanced'), L('v1', 'volleyball', 'Advanced +')],
     bundles: [], createdAt: 1 }],
   signups: { ev: [
-    seat('su-old', 'f1', 'essma@x.com'),
-    { ...seat('su-paid', 'f1', 'pat@x.com'), name: 'Paid Pat', deviceId: 'dP', paid: true },
+    seat('su-old', 'v0', 'essma@x.com'),
+    { ...seat('su-paid', 'v0', 'pat@x.com'), name: 'Paid Pat', deviceId: 'dP', paid: true },
   ] },
 };
 
@@ -67,9 +71,9 @@ const after = await rows();
 console.log('after seating:', JSON.stringify(after));
 console.log('errors:', errs.length ? errs : 'none');
 
-const ok = after.includes('Essma@b1')          // seated where the pass holds now
-        && !after.includes('Essma@f1')          // and no longer where it used to
-        && after.includes('Paid Pat@f1 (paid)') // a paid seat is a fact, left alone
+const ok = after.includes('Essma@v1')          // seated where the pass holds now
+        && !after.includes('Essma@v0')          // and no longer where it used to
+        && after.includes('Paid Pat@v0 (paid)') // a paid seat is a fact, left alone
         && after.filter(x => x.startsWith('Essma')).length === 1
         && !errs.length;
 console.log('\n' + (ok

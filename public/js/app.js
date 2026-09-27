@@ -489,8 +489,29 @@ function mySessionIds(ev, exceptId = null) {
  * level, matched by name so it follows the player into each new Saturday.
  * A 2h pass holds one; a 4h pass can hold one in each time slot.
  */
+/*
+ * The season pass is a VOLLEYBALL pass. That is what the club sells — the
+ * note says so, the price says so, and coveredSignupIds has always honoured
+ * it by covering volleyball spots and nothing else.
+ *
+ * The seat picker used to offer every list on the night, so an exec could
+ * tick "Basketball — Mixed" for a pass holder. The app then dutifully held
+ * that basketball seat every single Saturday, and the coverage rule refused
+ * to pay for it — so two members were reserved onto a sport they had not
+ * asked for and billed $10 a week for the privilege. Seventeen seats across
+ * nine Saturdays before anybody noticed, because a held seat looks exactly
+ * like a seat you chose.
+ *
+ * Filtering here rather than in each of the six callers means the seating,
+ * the billing, the picker and the re-save can never disagree about what a
+ * pass holds — and the seats already standing on the wrong sport stop being
+ * held, so the next render takes them off.
+ */
+const PASS_SPORT = 'volleyball';
+
 function passLists(player) {
-  return Array.isArray(player?.passLists) ? player.passLists : [];
+  if (!Array.isArray(player?.passLists)) return [];
+  return player.passLists.filter(w => w && w.sport === PASS_SPORT);
 }
 
 /*
@@ -3304,10 +3325,11 @@ function openPassModal(player, onDone) {
         <p class="hint">${esc(t('passUntilHint'))}</p>
         <label class="field-label">${esc(t('heldSpotLbl'))}</label>
         <div class="pass-lists">
-          ${(ev?.sessions || []).map(sess => `
+          ${(ev?.sessions || []).filter(sess =>
+            (ev.lists || []).some(l => l.sessionId === sess.id && l.sport === PASS_SPORT)).map(sess => `
             <div class="pass-sess">
               <small class="hint">${esc(sess.label)}</small>
-              ${(ev.lists || []).filter(l => l.sessionId === sess.id).map(l => `
+              ${(ev.lists || []).filter(l => l.sessionId === sess.id && l.sport === PASS_SPORT).map(l => `
                 <label class="pass-opt">
                   <input type="checkbox" data-list="${esc(l.id)}" ${has(l) ? 'checked' : ''}>
                   <span>${esc(SPORTS[l.sport]?.emoji || '')} ${esc(SPORTS[l.sport]?.label || l.sport)} — ${esc(l.label)}</span>
@@ -3345,7 +3367,7 @@ function openPassModal(player, onDone) {
       for (const cb of $$('[data-list]', ov)) {
         if (!cb.checked) continue;
         const l = (ev.lists || []).find(x => x.id === cb.dataset.list);
-        if (l) lists.push({ sport: l.sport, sessionId: l.sessionId, label: l.label });
+        if (l && l.sport === PASS_SPORT) lists.push({ sport: l.sport, sessionId: l.sessionId, label: l.label });
       }
     }
     await setBattlePass(player, type, lists, $('#pm-until', ov)?.value || '');
