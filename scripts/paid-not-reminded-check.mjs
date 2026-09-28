@@ -77,6 +77,10 @@ function run() {
             testAmount: { integerValue: '1' },
             passPrice4h: { integerValue: '135' },
             passPrice2h: { integerValue: '75' },
+            // This check is about the automatic path, which is opt-in now
+            // (see automatch-off-check). Switch it on so there is something
+            // to settle; the dues-trimming below is what is under test.
+            autoMatch: { stringValue: 'on' },
           } });
           if (path.indexOf('/') < 0) return res(200, { documents: docsIn(path) });
           return store[path] ? res(200, { fields: store[path] }) : res(404, {});

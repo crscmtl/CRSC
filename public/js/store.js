@@ -52,6 +52,21 @@ export const DEFAULT_SETTINGS = {
   lateFeeNote: '+5$ late fee if payment is made after the event',
   lateFeeAmount: 5,
   cancelLockHours: 24,
+  /*
+   * Whether a received e-transfer may mark somebody paid by itself.
+   *
+   * OFF, and off by design. On the club's first busy Saturday it credited
+   * the wrong people: with sixty names on a list instead of twelve, a
+   * transfer from ALEXA DE VILLA settled Arthur Huon de Penanster on the
+   * word "de", and HUGO HE settled He, Yu Chen on "he". It also reached
+   * back and spent payments from games already played.
+   *
+   * Transfers are still read, recorded and shown on the Payments screen
+   * with everything the club parsed out of them. An exec applies them.
+   * Reading the mail was always the valuable half; deciding whose money it
+   * is turned out to need a person.
+   */
+  autoMatch: 'off',
   // How many names may wait behind a full list. An unbounded waitlist is a
   // promise the club cannot keep: thirty people queued for two spare places
   // have all been told "maybe", and the ones at the bottom turn up for

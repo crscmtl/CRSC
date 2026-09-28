@@ -3898,8 +3898,12 @@ function scheduleDues() {
  * who owes $20 this Saturday AND $20 last Saturday is a question for a human,
  * not a coin flip.
  */
+/* Automatic settling is a club setting, and it is off unless somebody has
+ * deliberately turned it on. See autoMatch in DEFAULT_SETTINGS. */
+function autoMatchOn() { return state.settings?.autoMatch === 'on'; }
+
 async function runAutoMatch() {
-  if (!isExec()) return;
+  if (!isExec() || !autoMatchOn()) return;
   // `noAuto` is an exec having undone this one by hand. The matcher does not
   // get to argue: a transfer a human took back stays back, and waits for them
   // on the review list instead.
@@ -4536,6 +4540,12 @@ function openSettingsModal() {
         <p class="hint">${esc(t('testAmountHint'))}</p>
         <label class="field-label">${esc(t('signupOpenLbl'))}</label>
         <input class="input input-num" id="cs-openahead" type="number" min="0" step="1" value="${esc(s.signupOpenDaysBefore ?? 6)}">
+        <label class="field-label">${esc(t('autoMatchLbl'))}</label>
+        <select class="input" id="cs-automatch">
+          <option value="off" ${!autoMatchOn() ? 'selected' : ''}>${esc(t('autoMatchOff'))}</option>
+          <option value="on" ${autoMatchOn() ? 'selected' : ''}>${esc(t('autoMatchOn'))}</option>
+        </select>
+        <p class="hint">${esc(t('autoMatchHint'))}</p>
         <label class="field-label">${esc(t('waitlistMaxLbl'))}</label>
         <input class="input input-num" id="cs-wlmax" type="number" min="0" step="1" value="${esc(s.waitlistMax ?? 5)}">
         <p class="hint">${esc(t('waitlistMaxHint'))}</p>
@@ -4566,6 +4576,7 @@ function openSettingsModal() {
       seasonEnd: $('#cs-season', ov).value || s.seasonEnd || '',
       lateFeeNote: $('#cs-latefee', ov).value.trim(),
       lateFeeAmount: parseFloat($('#cs-latefeeamt', ov).value) || 0,
+      autoMatch: $('#cs-automatch', ov).value === 'on' ? 'on' : 'off',
       // A deliberate 0 is "a full list takes no more names", so it must
       // survive the save rather than falling back to the default.
       waitlistMax: (() => {

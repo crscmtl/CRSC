@@ -34,7 +34,9 @@ var API_KEY = 'AIzaSyB7tE4RwcQgmAIIxdyISjQwbamEDmts_hQ';
 // too — they used to be written down twice and could drift apart silently.
 // The numbers below are only the fallback if the settings cannot be read.
 var FALLBACK = { testAmount: 1, passPrice4h: 135, passPrice2h: 75,
-                 etransferEmail: '', clubFullName: 'CRSC', lateFeeNote: '', lateFeeAmount: 5 };
+                 etransferEmail: '', clubFullName: 'CRSC', lateFeeNote: '', lateFeeAmount: 5,
+                 // If the settings cannot be read at all, do not settle anybody.
+                 autoMatch: 'off' };
 
 function clubSettings() {
   try {
@@ -51,6 +53,7 @@ function clubSettings() {
       clubFullName: val(doc, 'clubFullName') || 'CRSC',
       lateFeeNote: val(doc, 'lateFeeNote') || '',
       lateFeeAmount: Number(val(doc, 'lateFeeAmount')) || 0,
+      autoMatch: val(doc, 'autoMatch') === 'on' ? 'on' : 'off',
     };
   } catch (e) {
     return FALLBACK;
@@ -355,6 +358,21 @@ function record(id, sender, amount, note, date) {
  * ==================================================================== */
 
 function settleTransfers() {
+  /*
+   * Off unless the club has deliberately switched it on.
+   *
+   * On the first busy Saturday this credited the wrong people. With sixty
+   * names on a list instead of twelve, one shared word is not evidence:
+   * ALEXA DE VILLA settled Arthur Huon de Penanster on "de", HUGO HE
+   * settled He, Yu Chen on "he". It also spent payments from games already
+   * played against the coming one.
+   *
+   * Reading the mail was always the valuable half. checkTransfers still
+   * records every transfer with its sender, amount and message, and the
+   * Payments screen still shows them. Deciding whose money it is turned out
+   * to need a person.
+   */
+  if (clubSettings().autoMatch !== 'on') return;
   var pending = listDocs('payments').filter(function (p) {
     return !val(p, 'matched') && !val(p, 'noAuto');
   });
