@@ -508,6 +508,7 @@ const STRINGS = {
   yourTotal: ['Your total for {date}', 'Votre total pour {date}'],
   waitlistNote: ['Full lists put you on the waitlist — if a spot opens you\'re moved up automatically and emailed.', 'Liste complète = liste d\'attente — si une place se libère, vous montez automatiquement et recevez un courriel.'],
   wlFull: ['waitlist full', 'liste d\'attente pleine'],
+  thisNightOnly: ['This Saturday only. For everything owed across the whole season, use “{btn}” on the home screen.', 'Ce samedi seulement. Pour tout ce qui est dû sur la saison entière, utilisez « {btn} » sur l\'accueil.'],
   olderTransfers: ['{n} older transfers, from earlier Saturdays', '{n} virements plus anciens, de samedis précédents'],
   olderTransfersHint: ['Sent before sign-ups opened for this Saturday, so they are for a game already played. Shown for the record; apply them on that Saturday\'s own page.', 'Envoyés avant l\'ouverture des inscriptions pour ce samedi : ils concernent une soirée déjà jouée. Affichés pour mémoire; appliquez-les sur la page du samedi concerné.'],
   autoMatchLbl: ['Mark people paid automatically from e-transfers', 'Marquer les paiements automatiquement selon les virements'],

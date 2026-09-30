@@ -63,6 +63,7 @@ await pg.evaluate(() => {
 });
 await pg.waitForTimeout(900);
 
+const badge = await pg.evaluate(() => document.querySelector('#btn-summary')?.textContent.trim() || '');
 const view = await pg.evaluate(() => ({
   offered: [...document.querySelectorAll('.pay-match')].map(r => r.querySelector('strong')?.textContent.trim()),
   dated: [...document.querySelectorAll('.pay-match .pay-when')].length,
@@ -70,6 +71,7 @@ const view = await pg.evaluate(() => ({
   foldedNames: [...document.querySelectorAll('.older-pays .entry')].map(e => e.textContent.replace(/\s+/g, ' ').trim()),
 }));
 
+console.log('the Payments button says   :', JSON.stringify(badge), '(must count 2, not 5)');
 console.log('offered for this Saturday :', JSON.stringify(view.offered));
 console.log('   each one dated         :', view.dated, 'of', view.offered.length);
 console.log('folded away               :', JSON.stringify(view.foldLabel));
@@ -79,7 +81,12 @@ const oldOffered = view.offered.filter(n => /OLD PAYER/.test(n || ''));
 console.log('\nold transfers offered for tonight:', oldOffered.length, '(must be 0)');
 
 console.log('errors:', errs.length ? errs : 'none');
+const scopedHint = await pg.evaluate(() =>
+  [...document.querySelectorAll('.hint')].some(h => /whole season|saison enti/i.test(h.textContent)));
+console.log('points at the season view :', scopedHint);
 const ok = view.offered.length === 2
+        && /\b2\b/.test(badge) && !/\b5\b/.test(badge)
+        && scopedHint
         && oldOffered.length === 0
         && view.dated === 2
         && view.foldedNames.length === 3

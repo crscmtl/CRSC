@@ -2294,7 +2294,7 @@ function renderEvent(ev) {
         <div class="row gap wrap exec-toolbar">
           ${isScheduled(ev) ? `<button class="btn btn-small btn-primary" id="btn-open-now">${esc(t('openNow'))}</button>` : ''}
           <button class="btn btn-small btn-ghost" id="btn-edit-event">${esc(t('editEvent'))}</button>
-          <button class="btn btn-small ${(state.payments || []).some(p => !p.matched) ? 'btn-warn' : 'btn-ghost'}" id="btn-summary">${esc(t('payments'))}${(state.payments || []).filter(p => !p.matched).length ? ` · ${(state.payments || []).filter(p => !p.matched).length}` : ''}</button>
+          <button class="btn btn-small ${payableNow(ev).length ? 'btn-warn' : 'btn-ghost'}" id="btn-summary">${esc(t('payments'))}${payableNow(ev).length ? ` · ${payableNow(ev).length}` : ''}</button>
           <button class="btn btn-small btn-ghost" id="btn-csv">${esc(t('exportCsv'))}</button>
           <button class="btn btn-small btn-ghost" id="btn-toggle-open">${esc(isOpen ? t('closeSignups') : t('reopenSignups'))}</button>
           <button class="btn btn-small btn-ghost" id="btn-find">${esc(t('findPlayer'))}</button>
@@ -4029,6 +4029,21 @@ function suggestMatch(pay, unpaid) {
   return best;
 }
 
+/*
+ * The unmatched transfers that could be for THIS Saturday.
+ *
+ * The badge on the Payments button counted every unmatched transfer the club
+ * had ever received, so it read "Payments · 72" on a night where 5 were
+ * actionable and 67 belonged to games already played. One definition, used
+ * by the badge and by the list behind it, so they cannot disagree.
+ */
+function payableNow(ev) {
+  const opened = eventOpensAt(ev);
+  return (state.payments || []).filter(p =>
+    !p.matched && !isTestTransfer(p, state.settings)
+    && (!p.receivedAt || p.receivedAt >= opened));
+}
+
 function openSummaryModal(ev) {
   // Rebuilt from scratch on every change, so two execs on the door are
   // never looking at two different answers.
@@ -4061,11 +4076,12 @@ function paintSummary(ov, ev) {
   // Only fold away a transfer KNOWN to predate the window. One that arrived
   // without a timestamp stays in the actionable list: hiding money an exec
   // has to account for is a worse failure than showing one line too many.
-  const pays = allPays.filter(p => !p.receivedAt || p.receivedAt >= opened);
+  const pays = payableNow(ev);
   const older = allPays.filter(p => p.receivedAt && p.receivedAt < opened);
   ov.querySelector('.modal').innerHTML = `
     <div class="modal-body">
       <h2>${esc(t('paymentsTitle', { date: fmtDate(ev.date) }))}</h2>
+      <p class="hint">${esc(t('thisNightOnly', { btn: t('ledgerBtn') }))}</p>
       <div class="stat-row">
         <div class="stat"><strong>${people.length}</strong><span>${esc(t('players'))}</span></div>
         <div class="stat stat-good"><strong>${fmtMoney(collected)}</strong><span>${esc(t('collected'))}</span></div>
