@@ -638,9 +638,31 @@ async function seatPassHolders(ev) {
   seating = true;
   seatedEvents.add(ev.id);
   try {
-    const removed = new Set((state.removals || [])
-      .filter(r => r.eventId === ev.id)
-      .map(r => identityOf(r) + '|' + r.listId));
+    /*
+     * The lists a pass may not put this person back on, because they took
+     * their own name off one.
+     *
+     * Keyed two ways on purpose. A removal written from now on carries the
+     * list id, which is exact. Every removal written before this carries
+     * only the labels, so those are matched on the labels — otherwise this
+     * fix would do nothing for the people it was written for until they
+     * removed themselves a second time.
+     */
+    const removed = new Set();
+    for (const r of (state.removals || [])) {
+      if (r.eventId !== ev.id) continue;
+      const who = identityOf(r);
+      if (r.listId) removed.add(who + '|id|' + r.listId);
+      if (r.listLabel) {
+        removed.add(who + '|lab|' + (r.sportLabel || '') + '|' + r.listLabel + '|' + (r.sessionLabel || ''));
+      }
+    }
+    const offThisList = (who, list) => {
+      const sess = sessionById(ev, list.sessionId);
+      return removed.has(who + '|id|' + list.id)
+          || removed.has(who + '|lab|' + (SPORTS[list.sport]?.label || list.sport)
+                         + '|' + list.label + '|' + (sess ? sess.label : ''));
+    };
     // One record per human: a duplicate profile must not earn a second seat.
     const holders = {};
     for (const player of Object.values(state.players || {})) {
@@ -668,7 +690,10 @@ async function seatPassHolders(ev) {
       const holder = holders[identityOf(su)];
       const list = listById(ev, su.listId);
       if (!list) continue;
+      // Saying "I can't make it" outranks the pass. The pass reserves a
+      // spot; it does not overrule the person it is reserved for.
       const stillHeld = holder && !(holder.passUntil && ev.date > holder.passUntil)
+        && !offThisList(identityOf(su), list)
         && passLists(holder).some(w =>
           w.sport === list.sport && w.sessionId === list.sessionId && w.label === list.label);
       if (!stillHeld) drop.push(su);
@@ -699,7 +724,7 @@ async function seatPassHolders(ev) {
           && listById(ev, su.listId)?.sessionId === list.sessionId
           && identityOf(su) === id);
         if (here) continue;
-        if (removed.has(id + '|' + list.id)) continue;                  // taken off on purpose
+        if (offThisList(id, list)) continue;                            // taken off on purpose
         claimed[key] = true;
         adds.push({
           id: passSeatId(id, list.id), listId: list.id, name: player.name,
@@ -1251,6 +1276,11 @@ async function logRemoval(ev, su, by) {
       phone: su.phone || '',
       insta: su.insta || '',
       deviceId: su.deviceId || '',
+      // The list itself, not just its name. Without this the pass seating
+      // could not tell which list somebody had taken their name off, so it
+      // put every pass holder straight back on and emailed them that their
+      // spot was reserved. Again the next render, and the one after that.
+      listId: su.listId || '',
       listLabel: l ? l.label : '',
       sportLabel: l ? (SPORTS[l.sport]?.label || l.sport) : '',
       sessionLabel: sess ? sess.label : '',
