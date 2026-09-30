@@ -1,5 +1,5 @@
 /*
- * The Payments screen must not offer a fortnight-old transfer for tonight.
+ * The Payments screen shows this Saturday's money, and nothing else.
  *
  * It listed every unmatched transfer the club had ever received, in one
  * undated column. Two weeks after launch that was 67 payments for games
@@ -27,18 +27,22 @@ const now = Date.now();
 
 const fixture = {
   // Sign-ups open 6 days before, so "this week" starts 6 days before the game.
-  settings: { signupOpenDaysBefore: 6 }, removals: [], log: [], refunds: [], players: {},
+  settings: { signupOpenDaysBefore: 6, passPrice2h: 75, passPrice4h: 135 }, removals: [], log: [], refunds: [], players: {},
   payments: [
     { id: 'p-new1', sender: 'FRESH ONE', amount: 8, message: '', receivedAt: now - day },
     { id: 'p-new2', sender: 'FRESH TWO', amount: 15, message: '', receivedAt: now - 2 * day },
     { id: 'p-old1', sender: 'OLD PAYER A', amount: 8, message: '', receivedAt: now - 12 * day },
     { id: 'p-old2', sender: 'OLD PAYER B', amount: 10, message: '', receivedAt: now - 14 * day },
     { id: 'p-old3', sender: 'OLD PAYER C', amount: 15, message: '', receivedAt: now - 20 * day },
+    // A season-pass price. Not a night's fee, so it belongs in its own
+    // section — an exec who grants the bundle expects it to leave the list.
+    { id: 'p-pass', sender: 'DENIZ GUNGOR', amount: 75, message: 'bundle payment for 2h', receivedAt: now - day },
   ],
   events: [{ id: 'ev', title: 'S', date: DATE, status: 'open', location: 'X',
     sessions: [{ id: 's1', label: '5:30 - 7:30 PM' }],
     lists: [{ id: 'v1', sessionId: 's1', sport: 'volleyball', label: 'Advanced +', cap: 20, level: 0, priceE: 8, priceC: 10, teamCount: 0 }],
     bundles: [], createdAt: 1 }],
+  players: { dD: { deviceId: 'dD', name: 'Deniz Gungor', email: 'deniz@x.com' } },
   signups: { ev: [{
     id: 'su1', listId: 'v1', name: 'Unpaid Person', email: 'u@x.com', phone: '', insta: '', photo: '',
     deviceId: 'dU', method: 'etransfer', paid: false, checkedIn: false, team: null, order: 1, createdAt: 1,
@@ -65,35 +69,62 @@ await pg.waitForTimeout(900);
 
 const badge = await pg.evaluate(() => document.querySelector('#btn-summary')?.textContent.trim() || '');
 const view = await pg.evaluate(() => ({
-  offered: [...document.querySelectorAll('.pay-match')].map(r => r.querySelector('strong')?.textContent.trim()),
-  dated: [...document.querySelectorAll('.pay-match .pay-when')].length,
-  foldLabel: document.querySelector('.older-pays summary')?.textContent.trim() || '',
-  foldedNames: [...document.querySelectorAll('.older-pays .entry')].map(e => e.textContent.replace(/\s+/g, ' ').trim()),
+  offered: [...document.querySelectorAll('.pay-match[data-pay]')].map(r => r.querySelector('strong')?.textContent.trim()),
+  dated: [...document.querySelectorAll('.pay-match[data-pay] .pay-when')].length,
+  fold: !!document.querySelector('.older-pays'),
+  passRows: [...document.querySelectorAll('[data-passpay]')].map(r => r.querySelector('strong')?.textContent.trim()),
 }));
 
-console.log('the Payments button says   :', JSON.stringify(badge), '(must count 2, not 5)');
+console.log('the Payments button says   :', JSON.stringify(badge), '(3 to deal with: 2 fees + 1 pass, not 6)');
 console.log('offered for this Saturday :', JSON.stringify(view.offered));
 console.log('   each one dated         :', view.dated, 'of', view.offered.length);
-console.log('folded away               :', JSON.stringify(view.foldLabel));
-view.foldedNames.forEach(n => console.log('   ', n));
+console.log('old backlog on screen     :', view.fold, '(must be false — it lives on the spreadsheet)');
+console.log('season-pass payments      :', JSON.stringify(view.passRows), '(its own section)');
 
 const oldOffered = view.offered.filter(n => /OLD PAYER/.test(n || ''));
 console.log('\nold transfers offered for tonight:', oldOffered.length, '(must be 0)');
+
+// Apply the pass payment, which is the thing an exec does after handing
+// somebody a bundle — the transfer has to leave the screen afterwards.
+await pg.evaluate(() => {
+  const row = document.querySelector('[data-passpay]');
+  const sel = row.querySelector('[data-pass-sel]');
+  const i = [...sel.options].findIndex(o => /Deniz/i.test(o.textContent));
+  if (i >= 0) sel.value = String(i);
+  row.querySelector('[data-pass-go]').click();
+});
+await pg.waitForTimeout(1200);
+const after = await pg.evaluate((K) => {
+  const s = JSON.parse(localStorage.getItem(K));
+  const who = Object.values(s.players || {}).find(p => /Deniz/i.test(p.name || ''));
+  return {
+    pass: who ? who.battlePass : null,
+    stillListed: !!document.querySelector('[data-passpay]'),
+    filed: (s.payments || []).find(p => p.id === 'p-pass'),
+  };
+}, KEY);
+console.log('\nafter granting the bundle:');
+console.log('   Deniz now holds          :', after.pass, '(must be 2h)');
+console.log('   transfer still on screen :', after.stillListed, '(must be false)');
+console.log('   transfer filed against   :', JSON.stringify(after.filed?.matchedTo), 'kind', JSON.stringify(after.filed?.kind));
 
 console.log('errors:', errs.length ? errs : 'none');
 const scopedHint = await pg.evaluate(() =>
   [...document.querySelectorAll('.hint')].some(h => /whole season|saison enti/i.test(h.textContent)));
 console.log('points at the season view :', scopedHint);
 const ok = view.offered.length === 2
-        && /\b2\b/.test(badge) && !/\b5\b/.test(badge)
+        && /\b3\b/.test(badge) && !/\b6\b/.test(badge)
         && scopedHint
         && oldOffered.length === 0
         && view.dated === 2
-        && view.foldedNames.length === 3
-        && /3/.test(view.foldLabel)
+        && view.fold === false
+        && view.passRows.length === 1
+        && !view.offered.includes('DENIZ GUNGOR')
+        && after.pass === '2h' && after.stillListed === false
+        && after.filed?.matchedTo === 'Deniz Gungor' && after.filed?.kind === 'pass'
         && !errs.length;
 console.log('\n' + (ok
-  ? 'only this Saturday\'s money can be applied, and every transfer carries its date'
+  ? 'only this Saturday\'s fees are in the match list; pass payments are separate and the old backlog is gone'
   : 'FAILED'));
 await b.close();
 process.exit(ok ? 0 : 1);

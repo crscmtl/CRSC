@@ -4071,13 +4071,23 @@ function paintSummary(ov, ev) {
    * The boundary is the moment this Saturday opened for sign-ups. Anything
    * sent before that was for a different night.
    */
-  const allPays = (state.payments || []).filter(p => !p.matched && !isTestTransfer(p, state.settings));
-  const opened = eventOpensAt(ev);
-  // Only fold away a transfer KNOWN to predate the window. One that arrived
-  // without a timestamp stays in the actionable list: hiding money an exec
-  // has to account for is a worse failure than showing one line too many.
-  const pays = payableNow(ev);
-  const older = allPays.filter(p => p.receivedAt && p.receivedAt < opened);
+  /*
+   * Only this Saturday's money, and only the kind that settles a night.
+   *
+   * Transfers from before this Saturday opened are not shown here at all.
+   * The club ran its first two Saturdays on a spreadsheet and that is where
+   * those are reconciled; carrying 70 of them into every week's screen made
+   * the one list an exec actually works from 93% noise. They stay in the
+   * database and in the season export, so nothing is lost.
+   *
+   * A transfer for exactly a season-pass price is not a night's fee and has
+   * no business in a list of people who owe $8. It gets its own section
+   * below, where applying it grants the pass and takes the transfer off the
+   * screen — which is what an exec expects after handing somebody a bundle.
+   */
+  const payable = payableNow(ev);
+  const passPays = payable.filter(p => passPurchase(p, state.settings));
+  const pays = payable.filter(p => !passPurchase(p, state.settings));
   ov.querySelector('.modal').innerHTML = `
     <div class="modal-body">
       <h2>${esc(t('paymentsTitle', { date: fmtDate(ev.date) }))}</h2>
@@ -4111,19 +4121,33 @@ function paintSummary(ov, ev) {
             </div>`;
           }).join('')}
         </div>` : ''}
-      ${older.length ? `
-        <details class="older-pays">
-          <summary>${esc(t('olderTransfers', { n: older.length }))}</summary>
-          <p class="hint">${esc(t('olderTransfersHint'))}</p>
-          <div class="summary-list">
-            ${older.map(pay => `
-              <div class="entry">
-                <span class="grow">${esc(pay.sender || '?')}</span>
-                <small class="hint">${esc(fmtDateShort(localISO(new Date(pay.receivedAt || 0))))}</small>
+      ${passPays.length ? `
+        <h3 class="section-sub">${esc(t('passPaymentsTitle', { n: passPays.length }))}</h3>
+        <p class="hint">${esc(t('passPaymentsHint'))}</p>
+        <div class="summary-list">
+          ${passPays.map(pay => {
+            const type = passPurchase(pay, state.settings);
+            const roster = allPlayers();
+            const sug = suggestMatch(pay, roster);
+            return `
+            <div class="pay-match" data-passpay="${esc(pay.id)}">
+              <div class="row gap center">
+                <strong class="grow">${esc(pay.sender || '?')}</strong>
+                <span class="chip chip-pass">${esc(String(type).toUpperCase())}</span>
                 <span class="pay-amt">${fmtMoney(pay.amount || 0)}</span>
-              </div>`).join('')}
-          </div>
-        </details>` : ''}
+              </div>
+              ${pay.receivedAt ? `<p class="pay-when">${esc(fmtDateShort(localISO(new Date(pay.receivedAt))))}</p>` : ''}
+              ${pay.message ? `<p class="pay-note">${esc(t('transferNote', { note: pay.message }))}</p>` : ''}
+              <div class="row gap">
+                <select class="input grow" data-pass-sel>
+                  ${roster.map((u, i) => `<option value="${i}" ${sug && sug.deviceId === u.deviceId ? 'selected' : ''}>${esc(u.name)}${u.email ? ' · ' + esc(u.email) : ''}</option>`).join('')}
+                </select>
+                <button class="btn btn-small btn-success" data-pass-go>✓</button>
+                <button class="btn btn-small btn-ghost" data-pass-x title="${esc(t('dismiss'))}">✕</button>
+              </div>
+            </div>`;
+          }).join('')}
+        </div>` : ''}
       ${(() => {
         const tests = (state.payments || []).filter(p => !p.matched && isTestTransfer(p, state.settings));
         if (!tests.length) return '';
@@ -4197,7 +4221,7 @@ function paintSummary(ov, ev) {
     </div>`;
   $$('[data-close]', ov).forEach(b => b.addEventListener('click', () => ov.remove()));
 
-  $$('.pay-match', ov).forEach(row => {
+  $$('.pay-match[data-pay]', ov).forEach(row => {
     const pay = pays.find(p => p.id === row.dataset.pay);
     const go = $('[data-match-go]', row);
     if (go) go.addEventListener('click', async () => {
@@ -4219,6 +4243,31 @@ function paintSummary(ov, ev) {
       await store.updatePayment(pay.id, { matched: true, matchedTo: '' });
       toast(t('dismissedToast'));
       row.remove();
+    });
+  });
+
+  $$('.pay-match[data-passpay]', ov).forEach(row => {
+    const pay = (state.payments || []).find(p => p.id === row.dataset.passpay);
+    if (!pay) return;
+    const roster = allPlayers();
+    $('[data-pass-go]', row)?.addEventListener('click', async () => {
+      // Picked by position, not by name: two members sharing a name is what
+      // gave somebody else's pass to Paul Li.
+      const who = roster[+$('[data-pass-sel]', row).value];
+      if (!who) return;
+      const type = passPurchase(pay, state.settings);
+      // Whatever spots they already hold are kept; an exec sets them from
+      // the player's PASS button if this is a new one.
+      await setBattlePass(who, type, passLists(state.players[who.deviceId] || who),
+                          state.settings.seasonEnd || '');
+      await store.updatePayment(pay.id, {
+        matched: true, matchedTo: who.name, kind: 'pass', matchedAt: Date.now(),
+      });
+      toast(t('passFiled', { name: who.name, type: String(type).toUpperCase() }));
+    });
+    $('[data-pass-x]', row)?.addEventListener('click', async () => {
+      await store.updatePayment(pay.id, { matched: true, matchedTo: '', kind: 'pass' });
+      toast(t('dismissedToast'));
     });
   });
 
