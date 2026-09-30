@@ -4041,7 +4041,28 @@ function paintSummary(ov, ev) {
   const unpaid = people.filter(p => !p.paid);
   const collected = people.reduce((a, p) => a + (p.paidAmount || 0), 0);
   const outstanding = unpaid.reduce((a, p) => a + p.total, 0);
-  const pays = (state.payments || []).filter(p => !p.matched && !isTestTransfer(p, state.settings));
+  /*
+   * Transfers still to be applied, split by whether they can plausibly be
+   * for THIS Saturday.
+   *
+   * The list used to be every unmatched transfer the club had ever received,
+   * in one undated column. Two weeks in that was 67 payments for games
+   * already played against 5 for the coming one, so an exec looking for
+   * tonight's money was reading a screen that was 93% history with nothing
+   * on it to say so. Crediting a Saturday player with a transfer from a
+   * fortnight ago took one tap — the same mistake the automatic matcher was
+   * making before it was switched off.
+   *
+   * The boundary is the moment this Saturday opened for sign-ups. Anything
+   * sent before that was for a different night.
+   */
+  const allPays = (state.payments || []).filter(p => !p.matched && !isTestTransfer(p, state.settings));
+  const opened = eventOpensAt(ev);
+  // Only fold away a transfer KNOWN to predate the window. One that arrived
+  // without a timestamp stays in the actionable list: hiding money an exec
+  // has to account for is a worse failure than showing one line too many.
+  const pays = allPays.filter(p => !p.receivedAt || p.receivedAt >= opened);
+  const older = allPays.filter(p => p.receivedAt && p.receivedAt < opened);
   ov.querySelector('.modal').innerHTML = `
     <div class="modal-body">
       <h2>${esc(t('paymentsTitle', { date: fmtDate(ev.date) }))}</h2>
@@ -4061,6 +4082,7 @@ function paintSummary(ov, ev) {
                 <strong class="grow">${esc(pay.sender || '?')}</strong>
                 <span class="pay-amt">${fmtMoney(pay.amount || 0)}</span>
               </div>
+              ${pay.receivedAt ? `<p class="pay-when">${esc(fmtDateShort(localISO(new Date(pay.receivedAt))))}</p>` : ''}
               ${pay.message ? `<p class="pay-note">${esc(t('transferNote', { note: pay.message }))}</p>` : ''}
               <div class="row gap">
                 ${unpaid.length ? `
@@ -4073,6 +4095,19 @@ function paintSummary(ov, ev) {
             </div>`;
           }).join('')}
         </div>` : ''}
+      ${older.length ? `
+        <details class="older-pays">
+          <summary>${esc(t('olderTransfers', { n: older.length }))}</summary>
+          <p class="hint">${esc(t('olderTransfersHint'))}</p>
+          <div class="summary-list">
+            ${older.map(pay => `
+              <div class="entry">
+                <span class="grow">${esc(pay.sender || '?')}</span>
+                <small class="hint">${esc(fmtDateShort(localISO(new Date(pay.receivedAt || 0))))}</small>
+                <span class="pay-amt">${fmtMoney(pay.amount || 0)}</span>
+              </div>`).join('')}
+          </div>
+        </details>` : ''}
       ${(() => {
         const tests = (state.payments || []).filter(p => !p.matched && isTestTransfer(p, state.settings));
         if (!tests.length) return '';

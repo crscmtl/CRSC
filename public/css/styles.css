@@ -538,3 +538,11 @@ select.input { appearance: auto; }
 }
 .si-or::before, .si-or::after { content: ""; flex: 1; height: 1px; background: var(--line); }
 .chip-exec-tag { background: var(--line-strong); color: var(--card); font-weight: 700; }
+
+/* The Payments screen dates every transfer and folds away the ones sent
+   before this Saturday opened, so an exec cannot apply a fortnight-old
+   payment to tonight's list by mistake. */
+.pay-when { margin: 2px 0 6px; font-size: 12px; color: var(--muted, #6b6257); }
+.older-pays { margin-top: 14px; border-top: 1px solid var(--line, #ddd6c9); padding-top: 10px; }
+.older-pays summary { cursor: pointer; font-weight: 600; font-size: 14px; padding: 4px 0; }
+.older-pays .summary-list { margin-top: 8px; opacity: .8; }
