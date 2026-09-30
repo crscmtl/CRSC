@@ -406,7 +406,7 @@ function createDemoStore() {
     },
     watchPlayers() {},
     watchPayments() {},
-    watchRemovals() {},
+    watchRemovals() { state.removalsReady = true; },
     async saveDues() { /* demo mode has no server-side matcher to feed */ },
     async updatePayment(paymentId, patch) {
       const p = state.payments.find(x => x.id === paymentId);
@@ -569,6 +569,12 @@ async function createFirebaseStore(config) {
       if (removalsWatcher) return;
       removalsWatcher = fs.onSnapshot(fs.collection(db, 'removals'), snap => {
         state.removals = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+        // Seating a pass holder asks this list whether they pulled out, so
+        // it must not be asked before the answer has arrived. Starting a
+        // listener is not the same as having the data: the first render put
+        // people back on lists they had left, because it looked at an empty
+        // array and believed it.
+        state.removalsReady = true;
         emit();
       }, err => console.error('removals listener', err));
     },
@@ -685,6 +691,7 @@ async function createArtifactDbStore() {
       if (removalsWatcher) return;
       removalsWatcher = db.collection('removals').onSnapshot(snap => {
         state.removals = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+        state.removalsReady = true;
         emit();
       }, onErr('removals'));
     },

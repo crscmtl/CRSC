@@ -628,6 +628,20 @@ async function seatPassHolders(ev) {
   if (!isExec() || !state.settings.passAutoSeat) return;
   if (ev.status !== 'open' || isPastEvent(ev)) return;
   if (seating || seatedEvents.has(ev.id)) return;
+  /*
+   * Not until the club's removals have actually arrived.
+   *
+   * watchRemovals() starts a listener; the rows land a moment later. This
+   * ran in the same breath as that call, read an empty array, and concluded
+   * that nobody had pulled out — so every pass holder who had said they
+   * could not come was put back on the list, and emailed that their spot
+   * was reserved. The seatedEvents guard then made sure it never looked
+   * again on that page load.
+   *
+   * Returning before that guard is the point: the next render retries, by
+   * which time the answer is in.
+   */
+  if (!state.removalsReady) return;
   // The roster has to be HERE before we can tell who is already seated.
   // renderEvent starts watching the event and calls this in the same breath,
   // so on the first render the snapshot has not arrived and every sign-up is
