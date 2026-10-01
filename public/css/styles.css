@@ -546,3 +546,8 @@ select.input { appearance: auto; }
 .older-pays { margin-top: 14px; border-top: 1px solid var(--line, #ddd6c9); padding-top: 10px; }
 .older-pays summary { cursor: pointer; font-weight: 600; font-size: 14px; padding: 4px 0; }
 .older-pays .summary-list { margin-top: 8px; opacity: .8; }
+
+/* A level the club is not running that week is still tickable — the seat is
+   simply waiting for the week it appears. Dimmed so an exec can see which
+   choices take effect now. */
+.pass-opt-off span { opacity: .62; }

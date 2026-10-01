@@ -3535,28 +3535,66 @@ function openPassModal(player, onDone) {
    * Ticks already made are carried across, so switching type by accident
    * does not silently clear somebody's held spots.
    */
+  /*
+   * Every level, under every time slot — not just the ones running this
+   * Saturday.
+   *
+   * The lists change week to week: Adv + Men might be a 7:30 list most
+   * weeks and appear at 5:30 the night a court frees up. Offering only
+   * what exists today meant a pass holder could not be given that spot
+   * until the week it appeared, and then an exec had to remember to go back
+   * and tick it. Ticking it in advance costs nothing — a held spot on a
+   * list that is not running that week simply does not get seated — and it
+   * means the seat is there the moment the club does run it.
+   *
+   * Levels are gathered from every Saturday on the calendar, so a level the
+   * club has ever run can be held in either slot.
+   */
+  function allSessions() {
+    const out = new Map();
+    for (const e of state.events || []) {
+      for (const sess of e.sessions || []) if (!out.has(sess.id)) out.set(sess.id, sess);
+    }
+    return [...out.values()].sort((a, b) => (a.label || '').localeCompare(b.label || ''));
+  }
+  function allLevels() {
+    const out = new Map();
+    for (const e of state.events || []) {
+      for (const l of e.lists || []) {
+        if (!isExecPass(type) && l.sport !== PASS_SPORT) continue;
+        const key = l.sport + '|' + l.label;
+        if (!out.has(key)) out.set(key, { sport: l.sport, label: l.label, level: l.level ?? 99 });
+      }
+    }
+    return [...out.values()].sort((a, b) =>
+      (a.sport || '').localeCompare(b.sport || '') || (a.level - b.level) || a.label.localeCompare(b.label));
+  }
+
   function paintLists() {
     const box = $('#pm-lists', ov);
     if (!box) return;
-    $$('[data-list]', ov).forEach(cb => {
-      const l = (ev?.lists || []).find(x => x.id === cb.dataset.list);
-      if (!l) return;
-      const at = chosen.findIndex(c => c.sport === l.sport && c.sessionId === l.sessionId && c.label === l.label);
-      if (cb.checked && at < 0) chosen.push({ sport: l.sport, sessionId: l.sessionId, label: l.label });
+    $$('[data-label]', ov).forEach(cb => {
+      const w = { sport: cb.dataset.sport, sessionId: cb.dataset.sess, label: cb.dataset.label };
+      const at = chosen.findIndex(c => c.sport === w.sport && c.sessionId === w.sessionId && c.label === w.label);
+      if (cb.checked && at < 0) chosen.push(w);
       if (!cb.checked && at >= 0) chosen.splice(at, 1);
     });
-    const offered = (l) => isExecPass(type) || l.sport === PASS_SPORT;
-    box.innerHTML = (ev?.sessions || [])
-      .filter(sess => (ev.lists || []).some(l => l.sessionId === sess.id && offered(l)))
-      .map(sess => `
-        <div class="pass-sess">
-          <small class="hint">${esc(sess.label)}</small>
-          ${(ev.lists || []).filter(l => l.sessionId === sess.id && offered(l)).map(l => `
-            <label class="pass-opt">
-              <input type="checkbox" data-list="${esc(l.id)}" ${has(l) ? 'checked' : ''}>
-              <span>${esc(SPORTS[l.sport]?.emoji || '')} ${esc(SPORTS[l.sport]?.label || l.sport)} — ${esc(l.label)}</span>
-            </label>`).join('')}
-        </div>`).join('');
+    const levels = allLevels();
+    // Which of them the club is actually running on the night being looked
+    // at, so an exec can see what takes effect now and what is standing by.
+    const runsNow = (sessId, w) => (ev?.lists || []).some(l =>
+      l.sessionId === sessId && l.sport === w.sport && l.label === w.label);
+    box.innerHTML = allSessions().map(sess => `
+      <div class="pass-sess">
+        <small class="hint">${esc(sess.label)}</small>
+        ${levels.map(w => `
+          <label class="pass-opt ${runsNow(sess.id, w) ? '' : 'pass-opt-off'}">
+            <input type="checkbox" data-sport="${esc(w.sport)}" data-sess="${esc(sess.id)}" data-label="${esc(w.label)}"
+                   ${has({ sport: w.sport, sessionId: sess.id, label: w.label }) ? 'checked' : ''}>
+            <span>${esc(SPORTS[w.sport]?.emoji || '')} ${esc(SPORTS[w.sport]?.label || w.sport)} — ${esc(w.label)}${
+              runsNow(sess.id, w) ? '' : ` <small class="hint">${esc(t('notThisWeek'))}</small>`}</span>
+          </label>`).join('')}
+      </div>`).join('');
   }
 
   function paint() {
@@ -3580,12 +3618,11 @@ function openPassModal(player, onDone) {
   $('#pm-save', ov).addEventListener('click', async () => {
     const lists = [];
     if (type) {
-      for (const cb of $$('[data-list]', ov)) {
+      for (const cb of $$('[data-label]', ov)) {
         if (!cb.checked) continue;
-        const l = (ev.lists || []).find(x => x.id === cb.dataset.list);
-        if (l && (isExecPass(type) || l.sport === PASS_SPORT)) {
-          lists.push({ sport: l.sport, sessionId: l.sessionId, label: l.label });
-        }
+        const sport = cb.dataset.sport;
+        if (!isExecPass(type) && sport !== PASS_SPORT) continue;
+        lists.push({ sport, sessionId: cb.dataset.sess, label: cb.dataset.label });
       }
     }
     await setBattlePass(player, type, lists, $('#pm-until', ov)?.value || '');
