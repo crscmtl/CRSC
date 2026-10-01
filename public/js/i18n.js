@@ -508,6 +508,7 @@ const STRINGS = {
   yourTotal: ['Your total for {date}', 'Votre total pour {date}'],
   waitlistNote: ['Full lists put you on the waitlist — if a spot opens you\'re moved up automatically and emailed.', 'Liste complète = liste d\'attente — si une place se libère, vous montez automatiquement et recevez un courriel.'],
   wlFull: ['waitlist full', 'liste d\'attente pleine'],
+  courtN: ['· court {n}', '· terrain {n}'],
   passPaymentsTitle: ['Season pass payments ({n})', 'Paiements de passe de saison ({n})'],
   passPaymentsHint: ['These are for a full-season bundle, not for this Saturday. Pick who it is for and the pass is activated on their profile.', 'Ces virements paient une passe de saison, pas ce samedi. Choisissez la personne et la passe est activée sur son profil.'],
   passFiled: ['{name} now has the {type} season pass.', '{name} a maintenant la passe de saison {type}.'],

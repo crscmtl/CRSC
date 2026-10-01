@@ -330,13 +330,42 @@ function mySignups(eventId) {
 }
 
 /* Everyone already in this time slot, by identity. */
-function identitiesInSession(ev, sessionId) {
+/*
+ * Who is already playing in a time slot.
+ *
+ * `exceptId` is the sign-up being moved. Without it, moving somebody from
+ * one 5:30 list to another 5:30 list is refused because they are already
+ * in that slot — on the row being moved. The club hit this the night an
+ * exec opened a second volleyball court at 5:30 and tried to move players
+ * onto it: the app told him one person per slot, and the person it meant
+ * was the one he was moving.
+ */
+function identitiesInSession(ev, sessionId, exceptId = null) {
   const out = new Set();
   for (const su of eventSignups(ev.id)) {
+    if (exceptId && su.id === exceptId) continue;
     const l = listById(ev, su.listId);
     if (l && l.sessionId === sessionId) out.add(identityOf(su));
   }
   return out;
+}
+
+/*
+ * What to call a list when somebody has to pick one.
+ *
+ * A gym with two courts free can run "Advanced +" twice in the same time
+ * slot, and then every menu offers the same words twice with no way to
+ * tell which is which. Where that happens, and only there, the courts are
+ * numbered in the order they were created.
+ */
+function listPickerLabel(ev, list) {
+  if (!list) return '';
+  const sport = SPORTS[list.sport]?.label || list.sport || '';
+  const twins = (ev.lists || []).filter(l =>
+    l.sessionId === list.sessionId && l.sport === list.sport && l.label === list.label);
+  const name = `${sport} ${list.label}`;
+  if (twins.length < 2) return name;
+  return `${name} ${t('courtN', { n: twins.indexOf(list) + 1 })}`;
 }
 
 function listById(event, listId) {
@@ -1370,7 +1399,7 @@ async function moveSignup(ev, su, newListId) {
   const to = listById(ev, newListId);
   const who = identityOf(su);
   if (!to) { toast(t('switchGone'), 'err'); return false; }
-  if (to.id !== su.listId && identitiesInSession(ev, to.sessionId).has(who)) {
+  if (to.id !== su.listId && identitiesInSession(ev, to.sessionId, su.id).has(who)) {
     toast(t('onePerSlot'), 'err');
     return false;
   }
@@ -2513,7 +2542,7 @@ function openFriendSheet(ev) {
           return `
             <label class="join-list ${full ? 'join-full' : ''} ${closed ? 'join-barred' : ''}">
               <input type="checkbox" data-flist="${esc(l.id)}" data-fsess="${esc(sess.id)}" ${closed ? 'disabled' : ''}>
-              <span class="grow">${esc(sport.label)} — ${esc(l.label)}</span>
+              <span class="grow">${esc(listPickerLabel(ev, l))}</span>
               ${closed ? `<span class="chip chip-muted">${esc(t('wlFull'))}</span>`
                 : full ? `<span class="chip chip-wl">${esc(t('waitlist').toLowerCase())}</span>` : ''}
             </label>`;
@@ -2618,7 +2647,7 @@ function openSwitchSheet(ev, su) {
           const sport = SPORTS[l.sport] || SPORTS.other;
           return `
             <button class="join-list switch-opt ${closed ? 'join-barred' : ''}" data-to="${esc(l.id)}" ${closed ? 'disabled' : ''}>
-              <span class="grow">${esc(sport.label)} — ${esc(l.label)}</span>
+              <span class="grow">${esc(listPickerLabel(ev, l))}</span>
               ${closed ? `<span class="chip chip-muted">${esc(t('wlFull'))}</span>`
                 : full ? `<span class="chip chip-wl">${esc(t('waitlist').toLowerCase())}</span>`
                      : `<span class="chip chip-muted">${esc(t('spotsLeft', { n: (l.cap || 0) - confirmed.length }))}</span>`}
@@ -2682,7 +2711,7 @@ function openJoinSheet(ev, preselectedListId) {
           return `
             <label class="join-list ${full ? 'join-full' : ''} ${barred ? 'join-barred' : ''}" data-session="${esc(sess.id)}">
               <input type="checkbox" data-list="${esc(l.id)}" data-sess="${esc(sess.id)}" ${barred ? 'disabled' : ''} ${l.id === preselectedListId && !barred ? 'checked' : ''}>
-              <span class="grow">${esc(sport.label)} — ${esc(l.label)}</span>
+              <span class="grow">${esc(listPickerLabel(ev, l))}</span>
               ${taken ? `<span class="chip chip-muted">${esc(t('slotTaken'))}</span>`
                 : !canSelfJoin(l) ? `<button type="button" class="btn btn-tiny btn-ghost" data-ask="${esc(l.id)}">${esc(t('askExec'))}</button>`
                 : closed ? `<span class="chip chip-muted">${esc(t('wlFull'))}</span>`
@@ -2912,7 +2941,7 @@ function paintPlayerAdmin(ov, ev, su) {
   const coveredHere = coveredSignupIds(ev).has(su.id);
   const listsOptions = (ev.lists || []).map(l => {
     const sess = sessionById(ev, l.sessionId);
-    return `<option value="${esc(l.id)}" ${l.id === su.listId ? 'selected' : ''}>${esc(sess ? sess.label : '')} · ${esc(SPORTS[l.sport]?.label || '')} ${esc(l.label)}</option>`;
+    return `<option value="${esc(l.id)}" ${l.id === su.listId ? 'selected' : ''}>${esc(sess ? sess.label : '')} · ${esc(listPickerLabel(ev, l))}</option>`;
   }).join('');
   const teamCount = curList?.teamCount || 0;
   ov.querySelector('.modal').innerHTML = `
