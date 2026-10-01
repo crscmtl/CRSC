@@ -3557,17 +3557,54 @@ function openPassModal(player, onDone) {
     }
     return [...out.values()].sort((a, b) => (a.label || '').localeCompare(b.label || ''));
   }
+  /*
+   * The club's own order, because difficulty is not the same as the level
+   * number: Advanced + and Adv + Men are both level 4, so sorting on that
+   * alone puts them in whatever order the alphabet decides. Anything the
+   * club invents later that is not on this list sorts after it, by level.
+   */
+  const LEVEL_ORDER = ['Intermediate', 'Advanced', 'Advanced +', 'Adv + Mixed', 'Adv + Men'];
+  const rank = (label) => {
+    const i = LEVEL_ORDER.findIndex(n => n.toLowerCase() === String(label).trim().toLowerCase());
+    return i < 0 ? 99 : i;
+  };
+
   function allLevels() {
+    /*
+     * One entry per level the club runs, gathered from every Saturday.
+     *
+     * Keyed on the label with its case and spacing normalised, and the
+     * spelling used on the most Saturdays wins. One exec renaming a list to
+     * "advanced +" on a single night should not produce a second level here
+     * that holds different seats from the first.
+     *
+     * It cannot merge genuinely different words — "adv + mix" and
+     * "Adv + Mixed" are two names, and the seating matches on the name — so
+     * a list renamed to something new really is a new spot to hold. That is
+     * why the picker shows the odd one out rather than hiding it.
+     */
     const out = new Map();
     for (const e of state.events || []) {
       for (const l of e.lists || []) {
         if (!isExecPass(type) && l.sport !== PASS_SPORT) continue;
-        const key = l.sport + '|' + l.label;
-        if (!out.has(key)) out.set(key, { sport: l.sport, label: l.label, level: l.level ?? 99 });
+        const key = l.sport + '|' + String(l.label || '').trim().toLowerCase().replace(/\s+/g, ' ');
+        const seen = out.get(key);
+        if (!seen) { out.set(key, { sport: l.sport, label: l.label, level: l.level ?? 99, uses: 1 }); continue; }
+        seen.uses++;
+        if (l.label !== seen.label && seen.uses > 0) {
+          // Keep whichever spelling the club actually uses more often.
+          seen.spellings = seen.spellings || {};
+          seen.spellings[l.label] = (seen.spellings[l.label] || 0) + 1;
+          const best = Object.entries(seen.spellings).sort((x, y) => y[1] - x[1])[0];
+          if (best && best[1] > 1) seen.label = best[0];
+        }
       }
     }
     return [...out.values()].sort((a, b) =>
-      (a.sport || '').localeCompare(b.sport || '') || (a.level - b.level) || a.label.localeCompare(b.label));
+      (a.sport || '').localeCompare(b.sport || '')
+      || (rank(a.label) - rank(b.label))
+      || (a.level - b.level)
+      || a.label.localeCompare(b.label));
   }
 
   function paintLists() {

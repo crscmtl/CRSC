@@ -40,6 +40,14 @@ const fixture = {
     // Next Saturday the club moves Adv + Men to 5:30 as well.
     { id: 'evB', title: 'S', date: D2, status: 'open', location: 'X', openEarly: true, sessions: SESS,
       lists: [L('b1', 's1', 'Adv + Men', 4), L('b2', 's2', 'Adv + Men', 4)], bundles: [], createdAt: 2 },
+    // Other Saturdays, so the picker knows the club's full set of levels —
+    // including one night an exec typed "advanced +" in lower case, which
+    // must not become a sixth level holding a different seat.
+    { id: 'evC', title: 'S', date: D2, status: 'open', location: 'X', sessions: SESS,
+      lists: [L('c1', 's2', 'Intermediate', 1), L('c2', 's2', 'Advanced', 2),
+              L('c3', 's2', 'Adv + Mixed', 3), L('c4', 's1', 'Advanced +', 4)], bundles: [], createdAt: 3 },
+    { id: 'evD', title: 'S', date: D2, status: 'open', location: 'X', sessions: SESS,
+      lists: [L('d1', 's1', 'advanced +', 4)], bundles: [], createdAt: 4 },
   ],
   signups: { evA: [], evB: [] },
 };
@@ -76,6 +84,15 @@ const earlySlot = offered.find(s => /5:30/.test(s.slot || ''));
 const hasAdvMenEarly = (earlySlot?.opts || []).some(o => /Adv \+ Men/.test(o));
 console.log('\nAdv + Men offered at 5:30 :', hasAdvMenEarly, '(must be true — it only runs at 7:30 this week)');
 
+// The club runs five levels. A lower-case spelling of one of them on a
+// single night is the same level, not a sixth.
+const names = (earlySlot?.opts || []).map(o =>
+  o.replace(/\(not running this week\)/, '').replace(/^[^A-Za-z]*Volleyball — /, '').trim());
+console.log('levels offered, in order  :', JSON.stringify(names));
+const expected = ['Intermediate', 'Advanced', 'Advanced +', 'Adv + Mixed', 'Adv + Men'];
+const rightSet = JSON.stringify(names) === JSON.stringify(expected);
+console.log('   matches the club\'s five :', rightSet);
+
 // Tick it for 5:30 and save.
 await pg.evaluate(() => {
   const cb = document.querySelector('input[data-sess="s1"][data-label="Adv + Men"]');
@@ -103,7 +120,7 @@ const nextWeek = await pg.evaluate((K) => (JSON.parse(localStorage.getItem(K)).s
 console.log('next Saturday seats       :', JSON.stringify(nextWeek), '(b1 is the 5:30 Adv + Men)');
 
 console.log('errors:', errs.length ? errs : 'none');
-const ok = hasAdvMenEarly
+const ok = hasAdvMenEarly && rightSet
         && saved.holds.includes('s1:Adv + Men')
         // She holds only the 5:30 Adv + Men. This Saturday does not run it,
         // so she is seated nowhere — a held spot waiting for its week costs
