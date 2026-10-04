@@ -2127,7 +2127,7 @@ function paymentChip(s, covered = false, short = false, settle = null) {
  */
 function statusChips(ev, s, covered, exec, settle = null) {
   const pass = playerPass(s, ev.date);
-  const here = exec && s.checkedIn
+  const here = checkInOn() && exec && s.checkedIn
     ? `<span class="chip ${s.paid || covered ? 'chip-in-ok' : 'chip-in-warn'}">${esc(t('here'))}</span>`
     : '';
   const passMark = !covered && pass
@@ -2194,7 +2194,11 @@ function eventRecordHtml(ev) {
   const collected = people.reduce((a, p) => a + (p.paidAmount || 0), 0);
   const outstanding = people.filter(p => !p.paid).reduce((a, p) => a + p.total, 0);
   const checkedIn = people.filter(p => p.checkedIn).length;
-  const noShows = people.filter(p => !p.checkedIn && p.signups.some(su => held.has(su.id)));
+  // Without a register at the door everybody reads as a no-show, which is
+  // a worse answer than not answering.
+  const noShows = checkInOn()
+    ? people.filter(p => !p.checkedIn && p.signups.some(su => held.has(su.id)))
+    : [];
   const rms = (state.removals || []).filter(r => r.eventId === ev.id)
     .sort((a, b) => (b.removedAt || 0) - (a.removedAt || 0));
 
@@ -2202,8 +2206,9 @@ function eventRecordHtml(ev) {
     <div class="record-banner">${esc(t('recordBanner'))}</div>
     <div class="stat-row">
       <div class="stat"><strong>${people.length}</strong><span>${esc(t('signedUp'))}</span></div>
+      ${checkInOn() ? `
       <div class="stat stat-good"><strong>${checkedIn}</strong><span>${esc(t('showedUp'))}</span></div>
-      <div class="stat ${noShows.length ? 'stat-bad' : ''}"><strong>${noShows.length}</strong><span>${esc(t('didNotShow'))}</span></div>
+      <div class="stat ${noShows.length ? 'stat-bad' : ''}"><strong>${noShows.length}</strong><span>${esc(t('didNotShow'))}</span></div>` : ''}
       <div class="stat stat-good"><strong>${fmtMoney(collected)}</strong><span>${esc(t('collected'))}</span></div>
       <div class="stat ${outstanding ? 'stat-bad' : ''}"><strong>${fmtMoney(outstanding)}</strong><span>${esc(t('outstanding'))}</span></div>
     </div>
@@ -2312,7 +2317,7 @@ function renderEvent(ev) {
                 ? `<button class="btn btn-tiny btn-warn" data-refund="${esc(m.id)}">${esc(t('askRefund'))}</button>` : ''}`;
           }).join('')}
           ${mine.some(m => !m.paid && !coveredSet.has(m.id)) ? `<button class="btn btn-small btn-warn" id="btn-how-pay">${esc(t('howToPay'))}</button>` : (mine.every(m => coveredSet.has(m.id)) ? passChipHtml(playerPass(DEVICE, ev.date)) : `<span class="chip chip-paid">${esc(t('allPaid'))}</span>`)}
-          ${ev.date === todayStr() && isOpen ? (mine.every(m => m.checkedIn)
+          ${checkInOn() && ev.date === todayStr() && isOpen ? (mine.every(m => m.checkedIn)
             ? `<span class="chip chip-in-ok">${esc(t('selfCheckedIn'))}</span><button class="btn btn-tiny btn-ghost" id="btn-self-out">${esc(t('undo'))}</button>`
             : `<button class="btn btn-small btn-success" id="btn-self-in">${esc(t('imHere'))}</button>`) : ''}
         </div>
@@ -2958,7 +2963,7 @@ function paintPlayerAdmin(ov, ev, su) {
       </div>
       <div class="row gap">
         <button class="btn grow cb" id="pa-paid"></button>
-        <button class="btn grow cb" id="pa-in"></button>
+        ${checkInOn() ? '<button class="btn grow cb" id="pa-in"></button>' : ''}
       </div>
       <p class="hint">${esc(su.method === 'cash' ? t('cashOnSite') : t('etransfer'))}${su.addedByExec ? ' · ' + esc(t('addedByExec')) : ''}</p>
       ${coveredHere ? '' : `
@@ -3018,10 +3023,12 @@ function paintPlayerAdmin(ov, ev, su) {
     const paidBtn = $('#pa-paid', ov);
     const inBtn = $('#pa-in', ov);
     paidBtn.className = 'btn grow cb ' + (p ? onCls : (c ? 'cb-off' : 'cb-red'));
-    inBtn.className = 'btn grow cb ' + (c ? onCls : (p ? 'cb-off' : 'cb-red'));
     paidBtn.textContent = (p ? '☑ ' : '☐ ') + (coveredHere ? `${t('battlePass')} ${(playerPass(su) || '').toUpperCase()}` : (p ? t('paid') : t('markPaid')));
-    inBtn.textContent = (c ? '☑ ' : '☐ ') + (c ? t('checkedIn') : t('checkIn'));
     paidBtn.disabled = coveredHere;
+    if (inBtn) {
+      inBtn.className = 'btn grow cb ' + (c ? onCls : (p ? 'cb-off' : 'cb-red'));
+      inBtn.textContent = (c ? '☑ ' : '☐ ') + (c ? t('checkedIn') : t('checkIn'));
+    }
   }
   paintStatus();
   $('#pa-paid', ov).addEventListener('click', async () => {
@@ -3071,7 +3078,7 @@ function paintPlayerAdmin(ov, ev, su) {
     paintStatus();
   });
 
-  $('#pa-in', ov).addEventListener('click', async () => {
+  $('#pa-in', ov)?.addEventListener('click', async () => {
     const next = !su.checkedIn;
     await store.updateSignup(ev.id, su.id, { checkedIn: next });
     su.checkedIn = next;
@@ -3242,7 +3249,7 @@ function seasonLedger() {
         rec.nights.push({ id: ev.id, date: ev.date, amount: p.total, late: p.late, received: p.received });
       }
       // Held a spot on a night that has been and gone, never checked in.
-      if (past && p.signups.some(su => confirmed.has(su.id)) && !p.checkedIn) {
+      if (checkInOn() && past && p.signups.some(su => confirmed.has(su.id)) && !p.checkedIn) {
         rec.noShows.push({ id: ev.id, date: ev.date, paid: p.paid });
       }
     }
@@ -4049,6 +4056,9 @@ function scheduleDues() {
  * deliberately turned it on. See autoMatch in DEFAULT_SETTINGS. */
 function autoMatchOn() { return state.settings?.autoMatch === 'on'; }
 
+/* Does the club take a register at the door? Off unless switched on. */
+function checkInOn() { return state.settings?.checkIn === 'on'; }
+
 async function runAutoMatch() {
   if (!isExec() || !autoMatchOn()) return;
   // `noAuto` is an exec having undone this one by hand. The matcher does not
@@ -4216,6 +4226,18 @@ function paintSummary(ov, ev) {
               <div class="row gap">
                 ${unpaid.length ? `
                   <select class="input grow" data-match-sel>
+                    ${/*
+                       * Nobody is chosen until somebody chooses.
+                       *
+                       * Without this the menu falls back to its first entry,
+                       * so every transfer on the screen showed the same
+                       * name — the first person alphabetically who still
+                       * owed — and one tap on the tick credited them for
+                       * money somebody else had sent. Three transfers in a
+                       * row all offering to pay off Alaïs Sondervorst is
+                       * not a suggestion, it is a trap.
+                       */''}
+                    <option value="" ${sug ? '' : 'selected'}>${esc(t('pickAPerson'))}</option>
                     ${unpaid.map((u, i) => `<option value="${i}" ${sug && sug.name === u.name ? 'selected' : ''}>${esc(u.name)}${u.signups?.[0]?.email ? ' · ' + esc(u.signups[0].email) : ''} (${fmtMoney(u.total)})</option>`).join('')}
                   </select>
                   <button class="btn btn-small btn-success" data-match-go>✓</button>` : `<span class="hint grow">${esc(t('noUnpaidHere'))}</span>`}
@@ -4243,6 +4265,7 @@ function paintSummary(ov, ev) {
               ${pay.message ? `<p class="pay-note">${esc(t('transferNote', { note: pay.message }))}</p>` : ''}
               <div class="row gap">
                 <select class="input grow" data-pass-sel>
+                  <option value="" ${sug ? '' : 'selected'}>${esc(t('pickAPerson'))}</option>
                   ${roster.map((u, i) => `<option value="${i}" ${sug && sug.deviceId === u.deviceId ? 'selected' : ''}>${esc(u.name)}${u.email ? ' · ' + esc(u.email) : ''}</option>`).join('')}
                 </select>
                 <button class="btn btn-small btn-success" data-pass-go>✓</button>
@@ -4330,7 +4353,9 @@ function paintSummary(ov, ev) {
     if (go) go.addEventListener('click', async () => {
       // Picked by position, not by name: two members share a name often
       // enough that settling by name could quietly pay off the wrong one.
-      const person = unpaid[+$('[data-match-sel]', row).value];
+      const raw = $('[data-match-sel]', row).value;
+      if (raw === '') { toast(t('pickAPersonFirst'), 'err'); return; }
+      const person = unpaid[+raw];
       if (!person) return;
       const name = person.name;
       await Promise.all(person.signups.map(su => store.updateSignup(ev.id, su.id, { paid: true, paidAt: Date.now() })));
@@ -4356,7 +4381,9 @@ function paintSummary(ov, ev) {
     $('[data-pass-go]', row)?.addEventListener('click', async () => {
       // Picked by position, not by name: two members sharing a name is what
       // gave somebody else's pass to Paul Li.
-      const who = roster[+$('[data-pass-sel]', row).value];
+      const rawWho = $('[data-pass-sel]', row).value;
+      if (rawWho === '') { toast(t('pickAPersonFirst'), 'err'); return; }
+      const who = roster[+rawWho];
       if (!who) return;
       const type = passPurchase(pay, state.settings);
       // Whatever spots they already hold are kept; an exec sets them from
@@ -4787,6 +4814,11 @@ function openSettingsModal() {
         <p class="hint">${esc(t('testAmountHint'))}</p>
         <label class="field-label">${esc(t('signupOpenLbl'))}</label>
         <input class="input input-num" id="cs-openahead" type="number" min="0" step="1" value="${esc(s.signupOpenDaysBefore ?? 6)}">
+        <label class="field-label">${esc(t('checkInLbl'))}</label>
+        <select class="input" id="cs-checkin">
+          <option value="off" ${!checkInOn() ? 'selected' : ''}>${esc(t('checkInOff'))}</option>
+          <option value="on" ${checkInOn() ? 'selected' : ''}>${esc(t('checkInOn'))}</option>
+        </select>
         <label class="field-label">${esc(t('autoMatchLbl'))}</label>
         <select class="input" id="cs-automatch">
           <option value="off" ${!autoMatchOn() ? 'selected' : ''}>${esc(t('autoMatchOff'))}</option>
@@ -4824,6 +4856,7 @@ function openSettingsModal() {
       lateFeeNote: $('#cs-latefee', ov).value.trim(),
       lateFeeAmount: parseFloat($('#cs-latefeeamt', ov).value) || 0,
       autoMatch: $('#cs-automatch', ov).value === 'on' ? 'on' : 'off',
+      checkIn: $('#cs-checkin', ov).value === 'on' ? 'on' : 'off',
       // A deliberate 0 is "a full list takes no more names", so it must
       // survive the save rather than falling back to the default.
       waitlistMax: (() => {

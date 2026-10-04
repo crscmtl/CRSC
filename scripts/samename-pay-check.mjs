@@ -47,8 +47,11 @@ const options = await pg.evaluate(() =>
   [...document.querySelectorAll('[data-match-sel] option')].map(o => o.textContent.trim()));
 console.log('the exec is offered:');
 options.forEach(o => console.log('   ', o));
-const tellsApart = options.length === 2 && options.every(o => /@/.test(o))
-                && new Set(options).size === 2;
+// The menu opens on "— pick a person —" so no one is credited by accident;
+// the two Rayans are the entries after it.
+const people = options.filter(o => /@/.test(o));
+const tellsApart = options[0] === '— pick a person —'
+                && people.length === 2 && new Set(people).size === 2;
 
 // Pick the SECOND one — the one a name match would have got wrong.
 await pg.evaluate(() => {

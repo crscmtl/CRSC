@@ -29,14 +29,17 @@ const fixture = {
   // Sign-ups open 6 days before, so "this week" starts 6 days before the game.
   settings: { signupOpenDaysBefore: 6, passPrice2h: 75, passPrice4h: 135 }, removals: [], log: [], refunds: [], players: {},
   payments: [
-    { id: 'p-new1', sender: 'FRESH ONE', amount: 8, message: '', receivedAt: now - day },
-    { id: 'p-new2', sender: 'FRESH TWO', amount: 15, message: '', receivedAt: now - 2 * day },
+    // Inside the window whatever day this runs: the sign-up window can open
+    // as recently as this morning (it does when the run happens on a Sunday),
+    // so "recent" has to mean hours, not days.
+    { id: 'p-new1', sender: 'FRESH ONE', amount: 8, message: '', receivedAt: now - 3600e3 },
+    { id: 'p-new2', sender: 'FRESH TWO', amount: 15, message: '', receivedAt: now - 2 * 3600e3 },
     { id: 'p-old1', sender: 'OLD PAYER A', amount: 8, message: '', receivedAt: now - 12 * day },
     { id: 'p-old2', sender: 'OLD PAYER B', amount: 10, message: '', receivedAt: now - 14 * day },
     { id: 'p-old3', sender: 'OLD PAYER C', amount: 15, message: '', receivedAt: now - 20 * day },
     // A season-pass price. Not a night's fee, so it belongs in its own
     // section — an exec who grants the bundle expects it to leave the list.
-    { id: 'p-pass', sender: 'DENIZ GUNGOR', amount: 75, message: 'bundle payment for 2h', receivedAt: now - day },
+    { id: 'p-pass', sender: 'DENIZ GUNGOR', amount: 75, message: 'bundle payment for 2h', receivedAt: now - 3600e3 },
   ],
   events: [{ id: 'ev', title: 'S', date: DATE, status: 'open', location: 'X',
     sessions: [{ id: 's1', label: '5:30 - 7:30 PM' }],
@@ -89,8 +92,10 @@ console.log('\nold transfers offered for tonight:', oldOffered.length, '(must be
 await pg.evaluate(() => {
   const row = document.querySelector('[data-passpay]');
   const sel = row.querySelector('[data-pass-sel]');
-  const i = [...sel.options].findIndex(o => /Deniz/i.test(o.textContent));
-  if (i >= 0) sel.value = String(i);
+  // Take the option's own value, not its position: the menu opens with a
+  // "pick a person" entry, so position and value are not the same thing.
+  const opt = [...sel.options].find(o => /Deniz/i.test(o.textContent));
+  if (opt) sel.value = opt.value;
   row.querySelector('[data-pass-go]').click();
 });
 await pg.waitForTimeout(1200);

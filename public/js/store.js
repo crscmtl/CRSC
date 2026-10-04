@@ -67,6 +67,16 @@ export const DEFAULT_SETTINGS = {
    * is turned out to need a person.
    */
   autoMatch: 'off',
+  /*
+   * Whether the club takes a register at the door.
+   *
+   * Off. Nobody was tapping "I'm here", so the Saturday record read 20
+   * showed up and 83 no-shows for a night 103 people played — a number that
+   * is worse than no number, because an exec reading it has to remember it
+   * is meaningless. The field is kept on every sign-up, so switching this
+   * back on loses nothing.
+   */
+  checkIn: 'off',
   // How many names may wait behind a full list. An unbounded waitlist is a
   // promise the club cannot keep: thirty people queued for two spare places
   // have all been told "maybe", and the ones at the bottom turn up for
