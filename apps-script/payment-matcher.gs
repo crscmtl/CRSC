@@ -69,20 +69,68 @@ function clubSettings() {
  * before giving up — an unrecognised email costs a person being marked unpaid
  * when they have paid, which is the expensive direction to fail.
  */
+/*
+ * Mail this script has already dealt with, so it never reads it twice.
+ *
+ * FILED is a transfer that is in the database. LOOK is mail the search
+ * caught but no sender could be read out of — a bank changing its wording,
+ * or something that merely mentions Interac. Both are excluded from the
+ * next search; the second one is a label a human can open and see.
+ */
+var FILED = 'CRSC/filed';
+var LOOK = 'CRSC/needs a look';
+/* One run must finish well inside the six minutes Apps Script allows. */
+var BATCH = 25;
+var BUDGET_MS = 4 * 60 * 1000;
+
+function label(name) {
+  return GmailApp.getUserLabelByName(name) || GmailApp.createLabel(name);
+}
+
 function checkTransfers() {
+  /*
+   * Only mail that has not been handled yet.
+   *
+   * This used to re-read every Interac email of the last seven days on
+   * every run, firing a database write for each and letting a 409 mean
+   * "already have it". That is fine at twenty transfers a week. At a
+   * hundred and fifteen it took six minutes and Google killed the run, so
+   * nothing was filed and nothing was reminded.
+   *
+   * The label does the remembering now, so a normal run has almost nothing
+   * to do. The batch cap and the time budget are there for the first run
+   * after this change, which has a week of already-filed mail to label:
+   * it does as much as it safely can and the next run picks up the rest.
+   */
+  var started = Date.now();
+  var filed = label(FILED);
+  var look = label(LOOK);
   var threads = GmailApp.search(
-    'newer_than:7d (from:(interac.ca) OR from:(payments.interac.ca) OR ' +
+    'newer_than:7d -label:"' + FILED + '" -label:"' + LOOK + '" ' +
+    '(from:(interac.ca) OR from:(payments.interac.ca) OR ' +
     'subject:(interac) OR subject:(virement) OR subject:("e-transfer") OR ' +
-    'subject:("sent you money") OR subject:("vous a envoyé"))');
-  threads.forEach(function (thread) {
-    thread.getMessages().forEach(function (msg) {
+    'subject:("sent you money") OR subject:("vous a envoyé"))', 0, BATCH);
+
+  for (var i = 0; i < threads.length; i++) {
+    if (Date.now() - started > BUDGET_MS) break;   // the rest waits 15 minutes
+    var thread = threads[i];
+    var msgs = thread.getMessages();
+    var got = false;
+    for (var j = 0; j < msgs.length; j++) {
+      var msg = msgs[j];
       var subject = msg.getSubject() || '';
       var body = msg.getPlainBody() || '';
       var sender = findSender(subject, body, msg.getFrom());
-      if (!sender) return;
+      if (!sender) continue;
       record(msg.getId(), sender, findAmount(subject, body), message(body), msg.getDate());
-    });
-  });
+      got = true;
+    }
+    // Labelled either way, so it is not read again. Anything the parser
+    // could not understand lands under "needs a look" rather than being
+    // quietly dropped, which is how three real payments went missing once.
+    thread.addLabel(got ? filed : look);
+  }
+
   // Filing the transfers is only half the job — settle the ones that are
   // unambiguous right now, so nobody has to open the app for it to happen.
   settleTransfers();
@@ -272,6 +320,10 @@ function findSender(subject, body, from) {
    * that looks like the service rather than a person is refused.
    */
   var disp = String(from || '').split('<')[0].replace(/["']/g, '').trim();
+  // A bare address with no display name is not somebody's name. Mail from
+  // a list or a marketing address that merely mentions Interac would
+  // otherwise be filed as a payment from "news@example.com".
+  if (disp.indexOf('@') >= 0) return '';
   if (disp.length >= 2 && disp.length <= 60 && !/\d{3}/.test(disp)
       && !/interac|virement|e-?transfer|notif|alert|bank|banque|desjardins|scotia|rbc|bmo|cibc|td\b/i.test(disp)) {
     return disp;
