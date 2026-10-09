@@ -966,8 +966,20 @@ function personTotals(ev) {
     const total = Math.max(0, round2(billed - received));
     const paidAmount = round2(settledValue + received);
     const paid = total === 0;          // settled, covered, waitlisted, or paid off
+    /*
+     * Owing nothing is not the same as having paid.
+     *
+     * Somebody whose only spots are on a waitlist is charged nothing,
+     * because they never got on the court — so the sum above says they owe
+     * nothing, and the screen filed them under PAID showing "0$ ✓". An exec
+     * reading that counts them as settled when they have handed over
+     * nothing and are not playing.
+     */
+    const waiting = p.signups.length > 0
+      && !p.signups.some(x => held.has(x.id) || covered.has(x.id))
+      && settledValue === 0 && received === 0;
     return {
-      ...p, total, paidAmount, billed, received, pass, late, paid,
+      ...p, total, paidAmount, billed, received, pass, late, paid, waiting,
       partial: received > 0 && total > 0,
       checkedIn: p.signups.some(x => x.checkedIn),
     };
@@ -4165,8 +4177,9 @@ function openSummaryModal(ev) {
 
 function paintSummary(ov, ev) {
   const people = personTotals(ev);
-  const paid = people.filter(p => p.paid);
+  const paid = people.filter(p => p.paid && !p.waiting);
   const unpaid = people.filter(p => !p.paid);
+  const waiting = people.filter(p => p.waiting);
   const collected = people.reduce((a, p) => a + (p.paidAmount || 0), 0);
   const outstanding = unpaid.reduce((a, p) => a + p.total, 0);
   /*
@@ -4342,6 +4355,12 @@ function paintSummary(ov, ev) {
         <h3 class="section-sub">${esc(t('paidList', { n: paid.length }))}</h3>
         <div class="summary-list">
           ${paid.map(p => `<div class="entry"><span class="grow">${esc(p.name)}</span>${p.pass && !p.paidAmount ? passChipHtml(p.pass) : `<span class="chip chip-paid">${fmtMoney(p.paidAmount || 0)} ✓</span>`}</div>`).join('')}
+        </div>` : ''}
+      ${waiting.length ? `
+        <h3 class="section-sub">${esc(t('waitingList', { n: waiting.length }))}</h3>
+        <p class="hint">${esc(t('waitingNote'))}</p>
+        <div class="summary-list">
+          ${waiting.map(p => `<div class="entry"><span class="grow">${esc(p.name)}</span><span class="chip chip-wl">${esc(t('waitlist').toLowerCase())}</span></div>`).join('')}
         </div>` : ''}
       <button class="btn btn-primary wide" data-close>${esc(t('close'))}</button>
     </div>`;

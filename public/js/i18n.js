@@ -510,6 +510,8 @@ const STRINGS = {
   wlFull: ['waitlist full', 'liste d\'attente pleine'],
   courtN: ['· court {n}', '· terrain {n}'],
   pickAPerson: ['— pick a person —', '— choisir une personne —'],
+  waitingList: ['On the waitlist ({n})', 'Sur la liste d\'attente ({n})'],
+  waitingNote: ['They never got a spot, so nothing is owed and nothing has been paid.', 'Ils n\'ont jamais eu de place : rien n\'est dû et rien n\'a été payé.'],
   checkInLbl: ['Take a register at the door', 'Faire l\'appel à l\'entrée'],
   checkInOff: ['No — nobody checks in', 'Non — personne ne pointe'],
   checkInOn: ['Yes — show check-in and no-shows', 'Oui — afficher le pointage et les absences'],
