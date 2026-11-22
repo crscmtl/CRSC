@@ -330,15 +330,34 @@ select.input { appearance: auto; }
 .cap-text { white-space: nowrap; font-weight: 700; font-variant-numeric: tabular-nums; }
 
 .entries { display: flex; flex-direction: column; }
+/*
+ * The row must never be wider than the phone. It was: a long name pushed
+ * the chips and the remove button past the right edge, so the way off a
+ * list sat at x=409 on a 390px screen and the player had to scroll
+ * sideways to find it — which is most of why "some players don't see the
+ * button". The name gives way first (it is the one thing already legible
+ * from the avatar and position), and anything still too wide wraps onto a
+ * second line rather than leaving the screen.
+ */
 .entry {
-  display: flex; align-items: center; gap: 8px;
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
   padding: 6px 4px; border-bottom: 1px solid #f0e9d9;
   font-size: 14px;
 }
+/* Far enough to still read the name. Below this the chips and the button
+   wrap to a second line instead of squeezing it down to an initial. */
+.entry-name { min-width: 7.5em; }
+.entry-name > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .entry:last-child { border-bottom: none; }
 .entry-mine { background: var(--green-soft); border-radius: 5px; padding-left: 8px; padding-right: 8px; }
 .entry-clickable { cursor: pointer; }
 .entry-clickable:hover { background: var(--bg); border-radius: 5px; }
+/* A player's own row is a button in all but name, so it has to look like
+   one: outlined, and it stays green under the hover rule above. */
+.entry-mine.entry-clickable { border: 1px solid var(--green); }
+.entry-mine.entry-clickable:hover,
+.entry-mine.entry-clickable:active { background: #d6e8d2; }
+.btn-rm { flex: none; white-space: nowrap; }
 .entry-name span { font-weight: 600; }
 .entry-name em { font-style: normal; color: var(--green); font-size: 12px; }
 .entry-name small { display: block; color: var(--ink-soft); font-size: 11px; }

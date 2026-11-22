@@ -2153,9 +2153,21 @@ function statusChips(ev, s, covered, exec, settle = null) {
  * players only see their own.
  */
 function entryRow(ev, s, { waitlistPos = null, exec = false, covered = false } = {}) {
-  const mine = s.deviceId === DEVICE;
+  // This device OR this identity, because either one on its own loses
+  // somebody. Device alone was the old rule, and it hid the way out from
+  // anyone who signed up on a laptop and opened the app on their phone:
+  // they saw "your spots" at the top of the event, which goes by identity,
+  // and no way out of it on the list. Identity alone would lose the player
+  // who edits the email on their profile after signing up. Neither can
+  // claim a row that is not theirs, so taking both is safe.
+  const mine = s.deviceId === DEVICE || identityOf(s) === myIdentity();
+  // Their own name is what a player goes looking for when they cannot come,
+  // so the whole row opens their spot — not a 11px glyph at the end of it,
+  // which is what people were failing to find. Execs keep the admin sheet.
+  const myTap = mine && !exec;
+  const locked = cancellationLocked(ev);
   return `
-    <div class="entry ${mine ? 'entry-mine' : ''} ${exec ? 'entry-clickable' : ''}" ${exec ? `data-signup="${esc(s.id)}"` : ''}>
+    <div class="entry ${mine ? 'entry-mine' : ''} ${exec || myTap ? 'entry-clickable' : ''}" ${exec ? `data-signup="${esc(s.id)}"` : ''}${myTap ? ` data-myspot="${esc(s.id)}"` : ''}>
       ${avatarHtml(s, 'avatar-sm')}
       <div class="grow entry-name">
         <span>${esc(s.name)} ${mine ? `<em>${esc(t('you'))}</em>` : ''}</span>
@@ -2165,7 +2177,7 @@ function entryRow(ev, s, { waitlistPos = null, exec = false, covered = false } =
       ${waitlistPos !== null ? `<span class="chip chip-wl">${esc(t('wlShort', { n: waitlistPos }))}</span>` : ''}
       ${exec ? levelChipHtml(s) : ''}
       ${exec || mine ? statusChips(ev, s, covered, exec, personSettlement(ev, s)) : ''}
-      ${mine && !exec && !cancellationLocked(ev) ? `<button class="btn btn-tiny btn-ghost" data-cancel="${esc(s.id)}" title="${esc(t('remove'))}">✕</button>` : ''}
+      ${myTap ? `<button class="btn btn-tiny ${locked ? 'btn-ghost' : 'btn-danger'} btn-rm">${esc(locked ? t('mySpotTitle') : t('removeMe'))}</button>` : ''}
     </div>`;
 }
 
@@ -2322,7 +2334,10 @@ function renderEvent(ev) {
             const sess = l ? sessionById(ev, l.sessionId) : null;
             return `<span class="chip chip-mine">${esc(SPORTS[l?.sport]?.label || '')} ${esc(l ? l.label : '?')}${sess ? ' · ' + esc(sess.label) : ''}</span>${
               isOpen ? `<button class="btn btn-tiny btn-ghost" data-switch="${esc(m.id)}">${esc(t('switchSpot'))}</button>` : ''}${
-              isOpen && !cancellationLocked(ev) ? `<button class="btn btn-tiny btn-ghost" data-cantmake="${esc(m.id)}">${esc(t('cantMakeIt'))}</button>` : ''}${
+              // Red and full-sized. As a tiny ghost button beside two others
+              // it read as decoration, and players went looking for a way
+              // out that was already on the screen.
+              isOpen && !cancellationLocked(ev) ? `<button class="btn btn-small btn-danger" data-cantmake="${esc(m.id)}">${esc(t('cantMakeIt'))}</button>` : ''}${
               // Only where there is money to give back. Somebody who never
               // paid wants "can't make it", not a refund form.
               isOpen && !cancellationLocked(ev) && (m.paid || m.amountPaid)
@@ -2333,6 +2348,7 @@ function renderEvent(ev) {
             ? `<span class="chip chip-in-ok">${esc(t('selfCheckedIn'))}</span><button class="btn btn-tiny btn-ghost" id="btn-self-out">${esc(t('undo'))}</button>`
             : `<button class="btn btn-small btn-success" id="btn-self-in">${esc(t('imHere'))}</button>`) : ''}
         </div>
+        ${!exec && isOpen && !cancellationLocked(ev) ? `<p class="hint">${esc(t('tapYourName'))}</p>` : ''}
         ${!exec && isOpen && cancellationLocked(ev) ? `<p class="hint">${esc(t('cancelLocked'))}</p>` : ''}` : ''}
       ${isScheduled(ev) ? `<p class="hint scheduled-note">${esc(t('notOpenYet', { date: fmtDate(localISO(new Date(eventOpensAt(ev)))) }))}</p>` : ''}
       ${exec && isPastEvent(ev) ? eventRecordHtml(ev) : ''}
@@ -2354,38 +2370,14 @@ function renderEvent(ev) {
     e.preventDefault();
     openJoinSheet(ev, b.dataset.join);
   }));
-  $$('[data-cancel]').forEach(b => b.addEventListener('click', async e => {
+  $$('[data-myspot]').forEach(row => row.addEventListener('click', e => {
     e.preventDefault();
-    const su = eventSignups(ev.id).find(x => x.id === b.dataset.cancel);
-    if (!su) return;
-    if (await confirmModal(t('removeSelfConfirm', { name: su.name }), t('removeMe'))) {
-      await removeSignup(ev, su, 'self');
-      toast(t('removedSelf'));
-    }
+    const su = eventSignups(ev.id).find(x => x.id === row.dataset.myspot);
+    if (su) openMySpotSheet(ev, su);
   }));
   $$('[data-refund]').forEach(b => b.addEventListener('click', async () => {
     const su = mySignups(ev.id).find(x => x.id === b.dataset.refund);
-    if (!su) return;
-    const l = listById(ev, su.listId);
-    const paid = personSettlement(ev, su);
-    const amount = round2(su.amountPaid || paid?.received || computePrice(ev, [su.listId], su.method, null).total);
-    if (!await confirmModal(t('askRefundConfirm', {
-      list: l?.label || '', amount: fmtMoney(amount),
-    }), t('askRefund'))) return;
-    b.disabled = true;
-    // The request is filed BEFORE the spot goes: if the removal fails we
-    // would rather have a refund nobody asked for than money nobody
-    // recorded. An exec can always dismiss one.
-    await store.addRefund({
-      id: uid('rf'),
-      eventId: ev.id, date: ev.date,
-      name: su.name, email: su.email || '',
-      listLabel: l?.label || '', sportLabel: SPORTS[l?.sport]?.label || '',
-      sessionLabel: sessionById(ev, l?.sessionId)?.label || '',
-      amount, askedAt: Date.now(), settled: false,
-    });
-    await removeSignup(ev, su, 'self');
-    toast(t('askRefundDone'));
+    if (su && await requestRefund(ev, su)) b.disabled = true;
   }));
   $$('[data-cantmake]').forEach(b => b.addEventListener('click', async () => {
     const su = mySignups(ev.id).find(x => x.id === b.dataset.cantmake);
@@ -2416,7 +2408,6 @@ function renderEvent(ev) {
 
   if (exec) {
     $$('[data-signup]').forEach(row => row.addEventListener('click', e => {
-      if (e.target.closest('[data-cancel]')) return;
       const su = eventSignups(ev.id).find(x => x.id === row.dataset.signup);
       if (su) openPlayerAdminModal(ev, su);
     }));
@@ -2633,6 +2624,101 @@ function openFriendSheet(ev) {
     ov.remove();
     toast(t('friendAdded', { name }));
     sendConfirmationEmail(ev, { name, email, lang: getLang() }, chosen, method);
+  });
+}
+
+/*
+ * File a refund request and give the spot up. Reached from the strip at the
+ * top of the event and from a player's own row, so it lives here rather than
+ * in either handler.
+ */
+async function requestRefund(ev, su) {
+  const l = listById(ev, su.listId);
+  const paid = personSettlement(ev, su);
+  const amount = round2(su.amountPaid || paid?.received || computePrice(ev, [su.listId], su.method, null).total);
+  if (!await confirmModal(t('askRefundConfirm', {
+    list: l?.label || '', amount: fmtMoney(amount),
+  }), t('askRefund'))) return false;
+  // The request is filed BEFORE the spot goes: if the removal fails we
+  // would rather have a refund nobody asked for than money nobody
+  // recorded. An exec can always dismiss one.
+  await store.addRefund({
+    id: uid('rf'),
+    eventId: ev.id, date: ev.date,
+    name: su.name, email: su.email || '',
+    listLabel: l?.label || '', sportLabel: SPORTS[l?.sport]?.label || '',
+    sessionLabel: sessionById(ev, l?.sessionId)?.label || '',
+    amount, askedAt: Date.now(), settled: false,
+  });
+  await removeSignup(ev, su, 'self');
+  toast(t('askRefundDone'));
+  return true;
+}
+
+/*
+ * Where a player lands when they tap their own name on a list.
+ *
+ * Everything they can do about their own spot is here, on full-width buttons
+ * with words on them. The old way out was an 11px "✕" at the end of their
+ * row, with the only label in a title attribute — which a phone never shows.
+ * Players who could not come were leaving their name on the list because
+ * they could not find the way off it, and the spot went to waste while
+ * somebody sat on the waitlist.
+ *
+ * Tapping when it is too late to cancel says so, rather than offering
+ * nothing and leaving them to guess.
+ */
+function openMySpotSheet(ev, su) {
+  const l = listById(ev, su.listId);
+  const sess = l ? sessionById(ev, l.sessionId) : null;
+  const open = isEventOpen(ev);
+  const locked = cancellationLocked(ev);
+  const held = !!su.viaPass;
+  const covered = coveredSignupIds(ev).has(su.id);
+  // "Give up your spot" reads badly to somebody who never had one, so a
+  // waitlisted player is told where they stand before being asked.
+  const { waitlist } = splitByCap(listEntries(ev.id, su.listId), l?.cap || 0);
+  const wlPos = waitlist.findIndex(x => x.id === su.id);
+  const refundable = open && !locked && !covered && (su.paid || su.amountPaid) && wlPos < 0;
+
+  const ov = openModal(`
+    <div class="modal-body">
+      <h2 class="m0">${esc(t('mySpotTitle'))}</h2>
+      <p class="hint">${esc(t('mySpotOn', {
+        sport: SPORTS[l?.sport]?.label || '', list: l ? l.label : '?',
+        session: sess ? sess.label : '',
+      }))}</p>
+      ${wlPos >= 0
+        ? `<p class="hint">${esc(t('mySpotWaitlisted', { pos: t('wlShort', { n: wlPos + 1 }) }))}</p>`
+        : `<div class="row gap wrap">${covered ? passChipHtml(playerPass(su, ev.date)) : paymentChip(su, covered, false, personSettlement(ev, su))}</div>`}
+      ${locked
+        ? `<p class="hint">${esc(t('cancelLocked'))}</p>`
+        : `<button class="btn btn-danger wide" id="ms-remove">${esc(t('removeMyName'))}</button>`}
+      ${open && !locked ? `<button class="btn btn-ghost wide" id="ms-switch">${esc(t('changeMySpot'))}</button>` : ''}
+      ${refundable ? `<button class="btn btn-warn wide" id="ms-refund">${esc(t('askRefund'))}</button>` : ''}
+      <button class="btn btn-ghost wide" data-close>${esc(locked ? t('close') : t('keepMySpot'))}</button>
+    </div>`);
+
+  $('#ms-remove', ov)?.addEventListener('click', async () => {
+    // A held spot is not the same decision: the pass survives it, and saying
+    // so is what stops a pass holder sitting on a seat they cannot use.
+    const ask = wlPos >= 0 ? t('removeSelfConfirm', { name: su.name })
+      : held ? t('cantMakeHeldConfirm', { list: l?.label || '' })
+             : t('cantMakeConfirm', { list: l?.label || '' });
+    if (!await confirmModal(ask, t('removeMe'))) return;
+    $('#ms-remove', ov).disabled = true;
+    await removeSignup(ev, su, 'self');
+    ov.remove();
+    toast(held ? t('cantMakeHeldDone') : t('removedSelf'));
+  });
+  $('#ms-switch', ov)?.addEventListener('click', () => {
+    ov.remove();
+    openSwitchSheet(ev, su);
+  });
+  $('#ms-refund', ov)?.addEventListener('click', async () => {
+    $('#ms-refund', ov).disabled = true;
+    if (await requestRefund(ev, su)) ov.remove();
+    else $('#ms-refund', ov).disabled = false;
   });
 }
 
