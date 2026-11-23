@@ -1,5 +1,5 @@
 import {
-  createStore, SPORTS, LEVELS, levelByRank, listLevel, uid, deviceId, setDeviceId, makeTemplateEvent, nextSaturday, saturdaysUntil, localISO,
+  createStore, SPORTS, LEVELS, levelByRank, listLevel, storedListLevel, normalizeLevel, uid, deviceId, setDeviceId, makeTemplateEvent, nextSaturday, saturdaysUntil, localISO,
 } from './store.js';
 import { t, tLang, getLang, setLang, locale } from './i18n.js';
 import { promotionCandidate, sendMail, mailerConfigured } from './notify.js';
@@ -498,8 +498,9 @@ function passExpired(who) {
  * decides afterwards where they belong.
  */
 function playerLevel(who) {
-  const r = playerRecord(who)?.level;
-  return r ? Number(r) : null;
+  // Through normalizeLevel, because a grade an exec set before Adv + Men
+  // existed is still a 1-4 in the database and means a different rung now.
+  return normalizeLevel(playerRecord(who)?.level);
 }
 
 /*
@@ -3663,15 +3664,16 @@ function openPassModal(player, onDone) {
     return [...out.values()].sort((a, b) => (a.label || '').localeCompare(b.label || ''));
   }
   /*
-   * The club's own order, because difficulty is not the same as the level
-   * number: Advanced + and Adv + Men are both level 4, so sorting on that
-   * alone puts them in whatever order the alphabet decides. Anything the
-   * club invents later that is not on this list sorts after it, by level.
+   * The club's own order, taken from the one table that defines it. This
+   * used to be a second copy of the list of level names, written when
+   * Advanced + and Adv + Men shared a level number and the order could not
+   * be read off the grades. Anything the club invents later that is not a
+   * graded level sorts after the ones that are.
    */
-  const LEVEL_ORDER = ['Intermediate', 'Advanced', 'Advanced +', 'Adv + Mixed', 'Adv + Men'];
   const rank = (label) => {
-    const i = LEVEL_ORDER.findIndex(n => n.toLowerCase() === String(label).trim().toLowerCase());
-    return i < 0 ? 99 : i;
+    const want = String(label).trim().toLowerCase();
+    const l = LEVELS.find(x => x.label.toLowerCase() === want);
+    return l ? l.rank : 999;
   };
 
   function allLevels() {
@@ -3694,7 +3696,7 @@ function openPassModal(player, onDone) {
         if (!isExecPass(type) && l.sport !== PASS_SPORT) continue;
         const key = l.sport + '|' + String(l.label || '').trim().toLowerCase().replace(/\s+/g, ' ');
         const seen = out.get(key);
-        if (!seen) { out.set(key, { sport: l.sport, label: l.label, level: l.level ?? 99, uses: 1 }); continue; }
+        if (!seen) { out.set(key, { sport: l.sport, label: l.label, level: normalizeLevel(l.level) || 999, uses: 1 }); continue; }
         seen.uses++;
         if (l.label !== seen.label && seen.uses > 0) {
           // Keep whichever spelling the club actually uses more often.
@@ -4729,8 +4731,8 @@ function openEventEditor(ev, { isNew = false } = {}) {
         </div>
         <div class="row gap">
           <select class="input grow" data-f="level" title="${esc(t('gradeLbl'))}">
-            <option value="0" ${!l.level ? 'selected' : ''}>${esc(t('gradeNone'))}</option>
-            ${LEVELS.map(x => `<option value="${x.rank}" ${Number(l.level) === x.rank ? 'selected' : ''}>${esc(t('gradeIs', { level: x.label }))}</option>`).join('')}
+            <option value="0" ${!storedListLevel(l) ? 'selected' : ''}>${esc(t('gradeNone'))}</option>
+            ${LEVELS.map(x => `<option value="${x.rank}" ${storedListLevel(l) === x.rank ? 'selected' : ''}>${esc(t('gradeIs', { level: x.label }))}</option>`).join('')}
           </select>
         </div>
         <div class="ee-cols"><span>${esc(t('listCols'))}</span><span>${esc(t('listCols2'))}</span></div>

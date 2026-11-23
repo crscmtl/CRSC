@@ -50,8 +50,11 @@ await pg.evaluate(() => {
   document.querySelector('#pa-amount-go')?.click();
 });
 await pg.waitForTimeout(700);
-// And grade her.
-await pg.evaluate(() => document.querySelector('#pa-levels [data-level="2"], [data-level="2"]')?.click());
+// And grade her. By the level's name, not its number — the rungs were
+// renumbered when Adv + Men was added, and a test that hard-codes a rank
+// goes quietly green-to-red for a reason that has nothing to do with the
+// record it is checking.
+await pg.evaluate(() => document.querySelector('#pa-level [title="Advanced"]')?.click());
 await pg.waitForTimeout(700);
 await pg.evaluate(() => document.querySelector('.modal-overlay [data-close]')?.click());
 await pg.waitForTimeout(400);

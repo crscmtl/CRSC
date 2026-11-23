@@ -116,32 +116,87 @@ export const DEFAULT_SETTINGS = {
  * who plays together, not how well.
  */
 export const LEVELS = [
-  { id: 'intermediate', rank: 1, label: 'Intermediate', short: 'INT' },
-  { id: 'advanced',     rank: 2, label: 'Advanced',     short: 'ADV' },
-  { id: 'advmixed',     rank: 3, label: 'Adv + Mixed',  short: 'ADV+ MIX' },
-  { id: 'advplus',      rank: 4, label: 'Advanced +',   short: 'ADV+' },
+  { id: 'intermediate', rank: 10, label: 'Intermediate', short: 'INT' },
+  { id: 'advanced',     rank: 20, label: 'Advanced',     short: 'ADV' },
+  { id: 'advplus',      rank: 30, label: 'Advanced +',   short: 'ADV+' },
+  { id: 'advmixed',     rank: 40, label: 'Adv + Mixed',  short: 'ADV+ MIX' },
+  { id: 'advmen',       rank: 50, label: 'Adv + Men',    short: 'ADV+ MEN' },
 ];
 
+/*
+ * Grades written before Adv + Men had a level of its own.
+ *
+ * The old ladder ran 1-4 and had Adv + Mixed (3) BELOW Advanced + (4), with
+ * Adv + Men sharing 4 because it had nowhere else to go. The club's order
+ * is Intermediate, Advanced, Advanced +, Adv + Mixed, Adv + Men, so the
+ * middle two swap and a fifth is added on top.
+ *
+ * Renumbering in place would have silently reclassified 82 graded players
+ * and every list in the calendar — a stored 4 would have gone on meaning
+ * whatever rank 4 now is. So the new ranks start at 10: no old number can
+ * be mistaken for a new one, nothing in the database has to be rewritten
+ * while people are signing up, and a grade written last month still reads
+ * correctly next season.
+ *
+ * A player on the old top rank stays on the new top rank, so nobody who
+ * can sign up for a list today is turned away by the renumbering. Their
+ * tag reads Adv + Men until an exec says otherwise.
+ */
+const OLD_PLAYER_RANK = { 1: 10, 2: 20, 3: 40, 4: 50 };
+const OLD_IS_UP_TO = 5;
+
+export function normalizeLevel(n) {
+  const v = Number(n);
+  if (!v || v < 0) return null;
+  return v <= OLD_IS_UP_TO ? (OLD_PLAYER_RANK[v] || null) : v;
+}
+
 export function levelByRank(rank) {
-  return LEVELS.find(l => l.rank === rank) || null;
+  const v = normalizeLevel(rank);
+  return LEVELS.find(l => l.rank === v) || null;
+}
+
+/*
+ * The grade a list's name implies. 0 where the name says nothing, so the
+ * caller can fall back. Order matters: "Adv + Men" and "Adv + Mixed" both
+ * carry a "+", so the specific words are read before it.
+ */
+function rankFromLabel(raw) {
+  const s = String(raw || '');
+  if (/intermediate|débutant|beginner/i.test(s)) return 10;
+  if (/\bmen\b|\bhomme/i.test(s)) return 50;
+  if (/mix/i.test(s)) return 40;
+  if (/\+/.test(s)) return 30;
+  return 0;
+}
+
+/*
+ * The grade an exec actually set on this list, on the current ladder, or
+ * null if none was ever set. Unlike listLevel this never guesses from the
+ * name: the grade editor has to be able to show "no grade" as no grade,
+ * or opening an event and saving it would quietly grade every list.
+ */
+export function storedListLevel(list) {
+  const stored = list?.level;
+  if (stored === undefined || stored === null || stored === '') return null;
+  const v = Number(stored);
+  if (!v) return 0;                 // a deliberate 0 means "anyone"
+  if (v > OLD_IS_UP_TO) return v;   // already graded on this ladder
+  // An old grade. The number alone cannot tell Advanced + from Adv + Men —
+  // they shared rank 4 — so the list's own name settles it where it knows.
+  return rankFromLabel(list.label) || OLD_PLAYER_RANK[v] || 0;
 }
 
 /*
  * How hard a list is. Events store this per list (`level`), so the club can
- * change the grading without a code change; the label reading below is only
- * the fallback for lists created before that existed.
+ * change the grading without a code change; the name is read only for a
+ * list made before grading existed.
  */
 export function listLevel(list) {
   if (!list || list.sport !== 'volleyball') return 0;   // ungraded
-  // An explicit grade always wins, including a deliberate 0 for "anyone".
-  // Only a list made before grades existed falls through to its label, and
-  // that guess breaks the moment somebody renames one.
-  if (list.level !== undefined && list.level !== null && list.level !== '') return Number(list.level);
-  const raw = String(list.label || '');
-  if (/intermediate|débutant|beginner/i.test(raw)) return 1;
-  if (/mix/i.test(raw)) return 3;              // "Adv + Mixed"
-  if (/\+|\bmen\b|\bhomme/i.test(raw)) return 4;  // "Advanced +", "Adv + Men"
-  return 2;                                     // "Advanced"
+  const set = storedListLevel(list);
+  if (set !== null) return set;
+  return rankFromLabel(list.label) || 20;               // plain "Advanced"
 }
 
 export const SPORTS = {
@@ -182,12 +237,12 @@ export function makeTemplateEvent(dateStr, title) {
     { id: uid('l'), sessionId: 's1', sport: 'basketball', label: 'Men',                cap: 12, priceE: 10, priceC: 10, teamCount: 0 },
     { id: uid('l'), sessionId: 's1', sport: 'football',   label: '5v5',                cap: 15, priceE: 10, priceC: 10, teamCount: 0 },
     // Graded lists read easiest first, the way the 7:30 slot always has.
-    { id: uid('l'), sessionId: 's1', sport: 'volleyball', label: 'Advanced',           cap: 21, level: 2, priceE: 8,  priceC: 10, teamCount: 3 },
-    { id: uid('l'), sessionId: 's1', sport: 'volleyball', label: 'Advanced +',         cap: 21, level: 4, priceE: 8,  priceC: 10, teamCount: 3 },
-    { id: uid('l'), sessionId: 's2', sport: 'volleyball', label: 'Intermediate',       cap: 21, level: 1, priceE: 8,  priceC: 10, teamCount: 3 },
-    { id: uid('l'), sessionId: 's2', sport: 'volleyball', label: 'Advanced',           cap: 28, level: 2, priceE: 8,  priceC: 10, teamCount: 4 },
-    { id: uid('l'), sessionId: 's2', sport: 'volleyball', label: 'Adv + Mixed',        cap: 21, level: 3, priceE: 8,  priceC: 10, teamCount: 3 },
-    { id: uid('l'), sessionId: 's2', sport: 'volleyball', label: 'Adv + Men',          cap: 21, level: 4, priceE: 8,  priceC: 10, teamCount: 3 },
+    { id: uid('l'), sessionId: 's1', sport: 'volleyball', label: 'Advanced',           cap: 21, level: 20, priceE: 8,  priceC: 10, teamCount: 3 },
+    { id: uid('l'), sessionId: 's1', sport: 'volleyball', label: 'Advanced +',         cap: 21, level: 30, priceE: 8,  priceC: 10, teamCount: 3 },
+    { id: uid('l'), sessionId: 's2', sport: 'volleyball', label: 'Intermediate',       cap: 21, level: 10, priceE: 8,  priceC: 10, teamCount: 3 },
+    { id: uid('l'), sessionId: 's2', sport: 'volleyball', label: 'Advanced',           cap: 28, level: 20, priceE: 8,  priceC: 10, teamCount: 4 },
+    { id: uid('l'), sessionId: 's2', sport: 'volleyball', label: 'Adv + Mixed',        cap: 21, level: 40, priceE: 8,  priceC: 10, teamCount: 3 },
+    { id: uid('l'), sessionId: 's2', sport: 'volleyball', label: 'Adv + Men',          cap: 21, level: 50, priceE: 8,  priceC: 10, teamCount: 3 },
   ];
   return {
     id: uid('ev'),
